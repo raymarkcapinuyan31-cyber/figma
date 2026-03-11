@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Technician Setup - HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/technician/pages/onboarding.css?v=20260308d">
+</head>
+<body>
+  <main class="onboard-shell">
+    <section class="onboard-card">
+      <h1 id="onboardTitle">Welcome to HFS</h1>
+      <p class="onboard-subtitle">Before continuing, complete your technician details.</p>
+
+      <form id="techOnboardPageForm" class="onboard-form" novalidate>
+        <div class="onboard-field">
+          <span class="onboard-field-label">Skills</span>
+          <div id="onboardSkill" class="onboard-skill-options" role="group" aria-label="Select one or more skills">
+            <label class="onboard-skill-option"><input type="checkbox" name="onboardSkillChoice" value="HVAC Technician"><span>HVAC Technician</span></label>
+            <label class="onboard-skill-option"><input type="checkbox" name="onboardSkillChoice" value="Appliance Repair Technician"><span>Appliance Repair Technician</span></label>
+            <label class="onboard-skill-option"><input type="checkbox" name="onboardSkillChoice" value="Electrician"><span>Electrician</span></label>
+            <label class="onboard-skill-option"><input type="checkbox" name="onboardSkillChoice" value="Plumber"><span>Plumber</span></label>
+          </div>
+          <small class="onboard-help">Select all that apply.</small>
+        </div>
+
+        <label>
+          Mobile Number
+          <input type="text" id="onboardMobile" placeholder="09XXXXXXXXX or +639XXXXXXXXX" required>
+        </label>
+
+        <label>
+          Province
+          <select id="onboardProvince" required>
+            <option value="">Select province</option>
+          </select>
+        </label>
+
+        <label>
+          City / Municipality
+          <select id="onboardCity" required>
+            <option value="">Select city/municipality</option>
+          </select>
+        </label>
+
+        <label>
+          Town / Barangay
+          <select id="onboardTown" required>
+            <option value="">Select town/barangay</option>
+          </select>
+        </label>
+
+        <label>
+          Certifications (optional)
+          <input type="text" id="onboardCertifications" placeholder="e.g. NC II, TESDA Plumbing">
+        </label>
+
+        <p class="onboard-message" id="onboardMessage" role="status" aria-live="polite"></p>
+
+        <div class="onboard-actions">
+          <button type="submit" id="onboardContinueBtn">Save and Continue</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/technician/onboarding.js?v=20260309e"></script>
+</body>
+</html>

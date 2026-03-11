@@ -1,0 +1,191 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Register - HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/pages/register/index.css">
+</head>
+<body>
+  <div class="register-page">
+    <header class="site-header">
+      <div class="logo-wrapper">
+        <img class="site-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+      </div>
+      <div class="brand">Create an Account</div>
+    </header>
+
+    <main class="panel-wrapper">
+      <div class="panel">
+        <form class="register-form" novalidate>
+          <section class="form-step" data-step="1">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label" for="first">First name</label>
+                <div class="field">
+                  <input id="first" class="pill-input" type="text" name="first" autocomplete="given-name" required aria-describedby="error-first">
+                </div>
+                <div class="error-message" id="error-first" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="middle">Middle initial <span class="optional" aria-hidden="true">(optional)</span></label>
+                <div class="field">
+                  <input id="middle" class="pill-input" type="text" name="middle" autocomplete="additional-name" maxlength="1" inputmode="text" pattern="[A-Za-z]" autocapitalize="characters" aria-describedby="error-middle">
+                </div>
+                <div class="error-message" id="error-middle" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="last">Last name</label>
+                <div class="field">
+                  <input id="last" class="pill-input" type="text" name="last" autocomplete="family-name" required aria-describedby="error-last">
+                </div>
+                <div class="error-message" id="error-last" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="suffix">Suffix</label>
+                <fieldset class="suffix-radio-group" role="radiogroup" aria-label="Choose suffix" aria-describedby="error-suffix">
+                  <legend class="sr-only">Suffix options</legend>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value=""><span>None</span></label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="Jr"><span>Jr</span></label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="Sr"><span>Sr</span></label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="II"><span>II</span></label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="III"><span>III</span></label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="IV"><span>IV</span></label>
+                </fieldset>
+                <input id="suffix" type="hidden" name="suffix" value="" autocomplete="honorific-suffix" aria-describedby="error-suffix">
+                <div class="error-message" id="error-suffix" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="birthdate">Birthdate</label>
+                <div class="field date-field" id="birthdateField">
+                  <input id="birthdate" class="pill-input date-native-input" type="date" name="birthdate" min="1900-01-01" max="2010-12-31" required aria-describedby="error-birthdate" title="Choose your birthdate">
+                  <button type="button" class="date-display" id="birthdateDisplay" aria-label="Select birthdate">
+                    <span class="date-display-text" id="birthdateDisplayText">Select birthdate</span>
+                    <span class="date-display-icon" aria-hidden="true">&#128197;</span>
+                  </button>
+                </div>
+                <div class="error-message" id="error-birthdate" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="reg-mobile">Mobile</label>
+                <div class="field">
+                  <input id="reg-mobile" class="pill-input" type="tel" name="mobile" autocomplete="tel" required aria-describedby="error-reg-mobile" placeholder="09XXXXXXXXX or +63XXXXXXXXX">
+                </div>
+                <div class="error-message" id="error-reg-mobile" role="alert" aria-live="assertive"></div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn back" id="backBtnStep1">BACK</button>
+              <button type="button" class="btn create" id="nextToStep2Btn">NEXT</button>
+            </div>
+          </section>
+
+          <section class="form-step" data-step="2" hidden>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label" for="reg-email">Email</label>
+                <div class="field">
+                  <input id="reg-email" class="pill-input" type="email" name="email" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="error-reg-email" placeholder="example@example.com">
+                </div>
+                <div class="error-message" id="error-reg-email" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label">Email Verification Link</label>
+                <button type="button" class="otp-send-btn" id="sendOtpBtn">SEND LINK</button>
+                <div class="error-message" id="error-reg-otp" role="alert" aria-live="assertive"></div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn back" id="backToStep1Btn">BACK</button>
+            </div>
+          </section>
+
+          <section class="form-step" data-step="3" hidden>
+            <div class="form-row">
+              <div class="form-group">
+                <div class="password-rules" id="passwordRules" aria-live="polite">
+                  <p class="password-rules-title">Password must include:</p>
+                  <ul class="password-rules-list">
+                    <li id="pwd-rule-length">8-12 characters</li>
+                    <li id="pwd-rule-uppercase">1 Uppercase Letter</li>
+                    <li id="pwd-rule-lowercase">1 Lowercase Letter</li>
+                    <li id="pwd-rule-number">1 Number</li>
+                    <li id="pwd-rule-special">1 Special character</li>
+                  </ul>
+                </div>
+                <label class="input-label" for="reg-password">Enter password</label>
+                <div class="field">
+                  <input id="reg-password" class="pill-input" type="password" name="password" autocomplete="new-password" required aria-describedby="error-reg-password">
+                  <button type="button" class="password-toggle" data-target="#reg-password" aria-label="Show password" aria-pressed="false">
+                    <img src="../../images/icons/eye-closed.svg" alt="Show password">
+                  </button>
+                </div>
+                <div class="error-message" id="error-reg-password" role="alert" aria-live="assertive"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="input-label" for="reg-password2">Verify password</label>
+                <div class="field">
+                  <input id="reg-password2" class="pill-input" type="password" name="password2" autocomplete="new-password" required aria-describedby="error-reg-password2">
+                  <button type="button" class="password-toggle" data-target="#reg-password2" aria-label="Show password" aria-pressed="false">
+                    <img src="../../images/icons/eye-closed.svg" alt="Show password">
+                  </button>
+                </div>
+                <div class="error-message" id="error-reg-password2" role="alert" aria-live="assertive"></div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn back" id="backToStep2Btn">BACK</button>
+              <button type="submit" class="btn create" id="createAccountBtn">CREATE</button>
+            </div>
+          </section>
+
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <aside class="success-panel" id="successPanel" hidden>
+    <div class="success-card" role="status" aria-live="polite">Created successfully! Welcome to HomeFixSolution.</div>
+  </aside>
+
+  <aside class="notify-panel" id="notifyPanel" hidden>
+    <div class="notify-card" id="notifyMessage" role="status" aria-live="polite"></div>
+  </aside>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js?v=20260305a"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/register/shared.js"></script>
+  <script src="../../Js/user/register/errors.js"></script>
+  <script src="../../Js/user/register/first-name.js"></script>
+  <script src="../../Js/user/register/middle-name.js"></script>
+  <script src="../../Js/user/register/last-name.js"></script>
+  <script src="../../Js/user/register/suffix.js"></script>
+  <script src="../../Js/user/register/birthdate.js"></script>
+  <script src="../../Js/user/register/email.js"></script>
+  <script src="../../Js/user/register/mobile.js"></script>
+  <script src="../../Js/user/register/otp.js"></script>
+  <script src="../../Js/user/register/password.js"></script>
+  <script src="../../Js/user/register/confirm-password.js"></script>
+  <script src="../../Js/user/register/parts/core.js?v=20260308a"></script>
+  <script src="../../Js/user/register/main.js"></script>
+</body>
+</html>
+

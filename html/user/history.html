@@ -1,0 +1,47 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Forgot Password €” HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/security/forgot-password.css">
+</head>
+<body>
+  <div class="app-shell">
+    <main class="content forgot-content">
+      <section class="home-card forgot-card">
+        <h1>FORGOT PASSWORD</h1>
+        <div class="forgot-panel">
+          <p class="forgot-note">Reset your password by sending a link to your registered email.</p>
+          <form id="forgotPasswordForm" class="forgot-form" novalidate>
+            <label class="forgot-label" for="forgotEmail">Email</label>
+            <input class="forgot-input" id="forgotEmail" type="email" autocomplete="email" required>
+
+            <div class="forgot-actions">
+              <button class="forgot-btn" type="submit">Send Reset Link</button>
+              <a class="forgot-btn forgot-btn-secondary" href="security.html">Back to Security</a>
+            </div>
+          </form>
+          <div id="forgotMessage" class="forgot-message" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/security/forgot-password.js"></script>
+</body>
+</html>
+
+
+
+

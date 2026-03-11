@@ -1,0 +1,25 @@
+{
+  "customerId": "<AUTH_UID>",
+  "bookingType": "technician",
+  "serviceType": "Repair",
+  "category": "Appliance",
+  "serviceName": "Washing machine problem",
+  "appointmentRequired": true,
+  "issue": "The unit does not spin.",
+  "description": "The unit does not spin.",
+  "deviceType": "Washing machine problem",
+  "preferredSchedule": "Monday, March 3, 2026 10:00AM - 11:00AM",
+  "preferred_datetime": "Monday, March 3, 2026 10:00AM - 11:00AM",
+  "requestMode": "home-service",
+  "status": "pending",
+  "location": {
+    "addressId": "addr_123",
+    "houseUnit": "Blk 1 Lot 2",
+    "streetName": "Sample Street",
+    "barangay": "Bonuan Gueset",
+    "additionalDetails": "Near the covered court",
+    "city": "Dagupan City",
+    "isStoreVisit": false
+  },
+  "media": []
+}

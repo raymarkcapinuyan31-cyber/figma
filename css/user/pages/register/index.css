@@ -1,0 +1,136 @@
+*{box-sizing:border-box;font-family:"Plus Jakarta Sans",Segoe UI,Roboto,Arial,sans-serif}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:linear-gradient(160deg,#dceaff 0%,#eaf3ff 32%,#f7f9fd 100%);color:#222}
+
+/* page header (logo + brand above the card) - compact */
+.register-page{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px}
+.site-header{display:flex;flex-direction:column;align-items:center;gap:1px;margin:0 0 8px}
+.logo-wrapper{position:relative;width:clamp(48px,6.5vh,72px);height:clamp(48px,6.5vh,72px);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.logo-wrapper::after{content:"";position:absolute;inset:0;border-radius:50%;z-index:0;border:6px solid #2b6b9a;background:transparent}
+.logo-wrapper::before{content:"";position:absolute;inset:12px;border-radius:50%;background:transparent;z-index:1;border:3px solid #2b6b9a}
+.logo-wrapper img{width:calc(clamp(48px,6.5vh,72px) * 0.7);height:calc(clamp(48px,6.5vh,72px) * 0.7);object-fit:contain;display:block;position:relative;z-index:3;border-radius:50%;background:transparent}
+.site-logo{display:block;width:calc(clamp(48px,6.5vh,72px) * 0.7);height:calc(clamp(48px,6.5vh,72px) * 0.7);background:transparent}
+.brand{font-weight:800;letter-spacing:0.3px;color:#14232a;font-size:clamp(12px,1.5vh,16px);line-height:1;text-transform:none}
+
+/* centered white panel */
+.panel-wrapper{width:100%;display:flex;align-items:center;justify-content:center;min-height:0;padding:0}
+.panel{background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border-radius:16px;padding:16px 18px;max-width:980px;width:100%;min-height:560px;height:auto;overflow:hidden;display:flex;flex-direction:column;align-items:stretch;justify-content:center;box-shadow:0 20px 40px rgba(12,52,100,0.12);border:1px solid #cddced}
+
+.register-form{display:flex;flex-direction:column;gap:8px;align-items:stretch;width:100%;height:auto;max-height:none;overflow:visible;padding-bottom:0;justify-content:center}
+.step-title{display:none}
+.form-step{display:flex;flex-direction:column;gap:10px;min-height:0;height:auto}
+.form-step[hidden]{display:none}
+
+/* responsive — single column on narrow screens */
+@media(max-width:720px){
+  .form-row{grid-template-columns:1fr;gap:10px}
+  .panel{padding:14px}
+  .logo-wrapper{width:220px;height:220px}
+  .site-logo{width:150px;height:150px}
+  .pill-input{height:36px}
+  .btn{padding:8px 14px}
+  .actions{gap:10px}
+}
+.form-row{display:block;width:100%;max-width:500px;margin:0 auto}
+.form-group{width:100%;margin:0 0 2px}
+.form-row .form-group:last-child{margin-bottom:0}
+.input-label{display:block;color:#7a7a80;margin-bottom:1px;font-size:10px;font-weight:700;text-transform:none;letter-spacing:0.25px}
+.optional{font-weight:600;font-size:11px;color:#9aa0a6;margin-left:6px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.password-rules{margin:0 0 6px;padding:6px 8px;border:1px solid #e6e6e6;border-radius:8px;background:#fff}
+.password-rules-title{margin:0 0 4px;font-size:11px;font-weight:700;color:#222}
+.password-rules-list{margin:0;padding-left:16px}
+.password-rules-list li{font-size:11px;color:#7a7a80;line-height:1.35}
+.password-rules-list li.met{color:#22753e;text-shadow:0 0 6px rgba(34,117,62,0.35);font-weight:700}
+
+/* inputs — compact rounded rectangles (single-column) */
+.pill-input{display:block;width:100%;height:34px;border-radius:9px;background:#fff;border:1px solid #bfd2e8;color:#173454;padding:5px 9px;font-size:13px;outline:none;box-sizing:border-box}
+.pill-input::placeholder{color:#bbb;font-weight:600}
+.pill-input:focus{box-shadow:0 0 0 3px rgba(23,101,193,0.12);border-color:#1765c1}
+
+.field{position:relative;display:flex;align-items:center}
+.date-field{position:relative}
+.date-native-input{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
+.date-display{display:flex;align-items:center;justify-content:space-between;width:100%;height:34px;border-radius:9px;background:#fff;border:1px solid #bfd2e8;color:#173454;padding:5px 9px;font-size:13px;box-sizing:border-box;cursor:pointer}
+.date-display-text{font-size:13px;font-weight:600;color:#a3adb8}
+.date-display-icon{font-size:16px;line-height:1;color:#5d6b79}
+.date-field.has-value .date-display-text{color:#222;font-weight:500}
+.date-display:focus{outline:none;border-color:#d2d7de;box-shadow:none}
+.suffix-radio-group{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;padding:4px 0;border:0;min-inline-size:0}
+.suffix-radio-option{display:inline-flex;align-items:center;gap:6px;padding:2px 4px;border-radius:999px;background:transparent;font-size:12px;font-weight:700;color:#5c6d80;line-height:1.1;cursor:pointer;user-select:none;transition:color .18s ease,transform .12s ease}
+.suffix-radio-option:hover{color:#274666}
+.suffix-radio-option:active{transform:translateY(1px)}
+.suffix-radio-option:focus-within{outline:2px solid rgba(43,107,154,0.2);outline-offset:2px}
+.suffix-radio-option input{appearance:none;-webkit-appearance:none;width:16px;height:16px;margin:0;border-radius:50%;border:2px solid #9fb2c8;background:#f6f6f6;display:inline-block;position:relative;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+.suffix-radio-option input:checked{border-color:#2b6b9a;background:#e8f2fb;box-shadow:inset 0 0 0 4px #2b6b9a}
+.suffix-radio-option input:focus-visible{box-shadow:0 0 0 3px rgba(43,107,154,0.18),inset 0 0 0 4px #2b6b9a}
+.suffix-radio-option:has(input:checked) span{color:#12324a}
+.password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:none;padding:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;width:26px;height:26px}
+.password-toggle img{width:18px;height:18px;display:block}
+
+.input-error{border-color:#d9534f;box-shadow:0 0 0 4px rgba(217,83,79,0.06)}
+.error-message{display:none;color:#d9534f;font-size:10px;margin-top:2px}
+
+.otp-send-btn{margin-top:3px;height:28px;padding:0 10px;border:none;border-radius:8px;background:#0b0b0b;color:#fff;font-weight:700;letter-spacing:0.4px;cursor:pointer;text-transform:uppercase;font-size:10px}
+.otp-send-btn:hover{opacity:0.92}
+.otp-send-btn:disabled{opacity:0.6;cursor:not-allowed}
+
+/* actions */
+.actions{display:flex;gap:8px;justify-content:center;margin-top:8px;padding-top:0}
+.btn{background:linear-gradient(180deg,#1f72d2 0%,#145bab 100%);color:#fff;border-radius:10px;padding:8px 14px;border:1px solid #145aa9;cursor:pointer;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;min-width:88px;transition:all .2s ease}
+.btn.back{background:#0b0b0b;opacity:0.95}
+.btn.back{background:linear-gradient(180deg,#44576f 0%,#33465c 100%);border-color:#2f4459}
+.btn.create{background:linear-gradient(180deg,#1f72d2 0%,#145bab 100%)}
+.btn:hover{opacity:1;transform:translateY(-1px)}
+
+.success-panel{position:fixed;right:14px;bottom:14px;z-index:9999}
+.success-card{background:#ffffff;border:1px solid rgba(16,24,32,0.08);border-radius:10px;padding:10px 14px;box-shadow:0 10px 26px rgba(2,6,23,0.14);font-size:13px;font-weight:700;color:#1f2937}
+.notify-panel{position:fixed;right:14px;bottom:64px;z-index:9998}
+.notify-card{background:#ffffff;border:1px solid rgba(16,24,32,0.08);border-radius:10px;padding:10px 14px;box-shadow:0 10px 26px rgba(2,6,23,0.14);font-size:12px;font-weight:700;color:#1f2937}
+
+/* responsive */
+@media(max-width:640px){
+  .form-row{display:block}
+  .panel{padding:20px;border-radius:12px}
+  .site-logo{width:84px;height:84px}
+  .logo-wrapper{width:120px;height:120px}
+  .brand{font-size:16px}
+  .pill-input{height:40px}
+  .actions{gap:12px}
+  .btn{padding:10px 18px;min-width:96px}
+  .form-group{max-width:360px}
+}
+
+@media(max-height:900px){
+  .register-page{padding:6px 10px}
+  .panel{padding:10px 14px}
+  .logo-wrapper{width:76px;height:76px}
+  .site-logo{width:54px;height:54px}
+  .pill-input{height:40px}
+  .register-form{gap:7px}
+  .input-label{margin-bottom:3px;font-size:11px}
+}
+
+@media(max-height:820px){
+  .register-page{padding:4px 8px}
+  .panel{padding:9px 12px}
+  .logo-wrapper{width:68px;height:68px}
+  .site-logo{width:48px;height:48px}
+  .pill-input{height:36px;font-size:14px}
+  .register-form{gap:6px}
+  .input-label{margin-bottom:2px;font-size:10px}
+  .btn{padding:8px 16px;min-width:96px}
+}
+
+@media(max-height:700px){
+  .site-logo{width:42px;height:42px}
+  .logo-wrapper{width:60px;height:60px}
+  .panel{padding:8px 10px}
+  .pill-input{height:32px;font-size:13px}
+  .input-label{font-size:9px;margin-bottom:2px}
+  .brand{font-size:12px}
+  .register-form{gap:5px}
+  .btn{padding:6px 12px;min-width:74px}
+}
+

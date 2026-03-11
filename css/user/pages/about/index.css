@@ -1,0 +1,29 @@
+.about-card{align-items:stretch}
+
+html.hfs-sidebar-precollapsed .about-card,
+.app-shell.sidebar-collapsed .about-card{
+  max-width:none;
+  margin:0;
+  border:none;
+}
+
+@media(max-width:1200px){
+  .about-card{align-items:stretch}
+}
+
+.about-card{
+  font-family:"Plus Jakarta Sans","Segoe UI",Tahoma,sans-serif;
+  border:1px solid #cad9eb;
+  border-radius:20px;
+  box-shadow:0 14px 32px rgba(18,61,115,0.12);
+  overflow:auto;
+}
+
+.about-card .home-intro h1{letter-spacing:-0.01em}
+.about-card .book-now-btn,
+.about-card .book-appointment-btn{transition:transform .2s ease,filter .2s ease}
+.about-card .book-now-btn:hover,
+.about-card .book-appointment-btn:hover{transform:translateY(-1px);filter:brightness(1.04)}
+
+.about-card .feature-card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.about-card .feature-card:hover{transform:translateY(-2px);box-shadow:0 10px 20px rgba(13,71,140,.12);border-color:#c8d8eb}

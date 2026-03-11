@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isProfileOwnerByData(data) {
+      return signedIn() && (
+        (data.uid is string && data.uid == request.auth.uid)
+        || (request.auth.token.email is string && data.email is string && data.email == request.auth.token.email)
+        || (request.auth.token.email is string && data.emailAddress is string && data.emailAddress == request.auth.token.email)
+        || (request.auth.token.email is string && data.email_address is string && data.email_address == request.auth.token.email)
+      );
+    }
+
+    // User profile document: /users/{uid}
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isProfileOwnerByData(resource.data);
+
+      allow create: if (isOwner(uid) || isProfileOwnerByData(request.resource.data))
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email is string
+        && (request.resource.data.role == 'customer' || request.resource.data.role == 'technician');
+
+      allow update: if (isOwner(uid) || isProfileOwnerByData(resource.data) || isProfileOwnerByData(request.resource.data))
+        && request.resource.data.uid == request.auth.uid
+        && (!('role' in resource.data) || !('role' in request.resource.data) || resource.data.role == request.resource.data.role);
+
+      allow delete: if false;
+
+      // Saved addresses: /users/{uid}/addresses/{addressId}
+      match /addresses/{addressId} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+    }
+
+    // Booking requests: /requests/{requestId}
+    match /requests/{requestId} {
+      allow read: if signedIn() && resource.data.customerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow update: if signedIn()
+        && resource.data.customerId == request.auth.uid
+        && request.resource.data.customerId == resource.data.customerId
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled';
+
+      allow delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

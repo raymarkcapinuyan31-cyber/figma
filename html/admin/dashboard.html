@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Admin Dashboard - HomeFixSolution</title>
+	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260308ac">
+</head>
+<body>
+	<div class="app-shell">
+		<header class="topbar">
+			<div class="topbar-left">
+				<div class="logo-wrapper" aria-hidden="true">
+					<img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+				</div>
+				<div class="app-title">Admin Dashboard</div>
+			</div>
+			<div class="topbar-right">
+				<span id="adminSessionText" class="session-text">Checking admin session...</span>
+				<button class="btn-primary" id="adminLogoutBtn" type="button" data-logout="true">Log out</button>
+			</div>
+		</header>
+
+		<div class="layout">
+			<aside class="sidebar">
+				<button class="nav-link active" type="button" data-section="overview">Home Overview</button>
+				<p class="nav-section-title">Management</p>
+				<details class="nav-group" id="manageAccountsGroup">
+					<summary class="nav-link manage-summary" id="manageAccountsSummary">Manage Accounts <span class="nav-caret">▼</span></summary>
+					<div class="nav-submenu">
+						<button class="nav-sub-link" type="button" data-section="create-technician">Create Technician Account</button>
+						<button class="nav-sub-link" type="button" data-section="accounts" data-filter="technician">Technicians</button>
+						<button class="nav-sub-link" type="button" data-section="accounts" data-filter="customer">Customers</button>
+					</div>
+				</details>
+				<details class="nav-group" id="manageRequestsGroup">
+					<summary class="nav-link manage-summary" id="manageRequestsSummary">Manage Requests <span class="nav-caret">▼</span></summary>
+					<div class="nav-submenu">
+						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="waiting">Waiting</button>
+						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="accepted">Accepted</button>
+						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="cancelled">Cancelled</button>
+					</div>
+				</details>
+				<p class="nav-section-title nav-section-title-spaced">Session</p>
+				<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
+				<a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+			</aside>
+
+			<main class="content">
+				<section class="panel" id="overview" data-panel="overview">
+					<h1 class="panel-title">HOME OVERVIEW</h1>
+					<div class="overview-grid">
+						<article class="stat-card">
+							<h3>Customer Accounts</h3>
+							<p id="ovCustomerAccounts">0</p>
+						</article>
+						<article class="stat-card">
+							<h3>Technician Accounts</h3>
+							<p id="ovTechnicianAccounts">0</p>
+						</article>
+						<article class="stat-card">
+							<h3>Pending Requests</h3>
+							<p id="ovPendingRequests">0</p>
+						</article>
+						<article class="stat-card">
+							<h3>In Progress Requests</h3>
+							<p id="ovInProgressRequests">0</p>
+						</article>
+					</div>
+
+					<div class="panel-head">
+						<h2>Recent Requests</h2>
+						<button type="button" class="btn-secondary" id="refreshOverviewBtn">Refresh Overview</button>
+					</div>
+					<div class="table-wrap">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>Request ID</th>
+									<th>Status</th>
+									<th>Technician</th>
+									<th>Updated</th>
+								</tr>
+							</thead>
+							<tbody id="overviewRequestsTableBody">
+								<tr><td colspan="4">Loading overview...</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</section>
+
+				<section class="panel" id="accounts" data-panel="accounts" hidden>
+					<div class="panel-head">
+						<h1 class="panel-title"><span id="accountsPanelTitleLabel">MANAGE ACCOUNTS</span></h1>
+						<div class="panel-controls">
+							<input type="search" id="accountSearchInput" class="search-input" placeholder="Search name or email" aria-label="Search accounts">
+							<select id="accountStatusFilter" class="filter-select" aria-label="Filter account status">
+								<option value="all" selected>All Status</option>
+								<option value="active">Active</option>
+								<option value="inactive">Inactive</option>
+							</select>
+							<button type="button" class="btn-secondary" id="refreshAccountsBtn">Refresh</button>
+						</div>
+					</div>
+
+					<div class="table-wrap">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>Name</th>
+									<th>Email</th>
+									<th>Status</th>
+									<th id="accountsSkillsHeader">Skills</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="accountsTableBody">
+								<tr><td colspan="5">Loading accounts...</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</section>
+
+				<section class="panel" id="create-technician" data-panel="create-technician" hidden>
+					<h1 class="panel-title">CREATE TECHNICIAN ACCOUNT</h1>
+					<form id="addTechnicianForm" class="tech-form" novalidate>
+						<label>
+							First Name
+							<input type="text" id="techFirstName" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*" required>
+						</label>
+						<label>
+							Middle Name
+							<input type="text" id="techMiddleName" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*">
+						</label>
+						<label>
+							Last Name
+							<input type="text" id="techLastName" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*">
+						</label>
+						<fieldset class="tech-suffix-group" id="techSuffixGroup">
+							<legend>Suffix</legend>
+							<div class="tech-suffix-options">
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="">None</label>
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="Jr.">Jr.</label>
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="Sr.">Sr.</label>
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="II">II</label>
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="III">III</label>
+								<label class="tech-suffix-option"><input type="radio" name="techSuffix" value="IV">IV</label>
+							</div>
+						</fieldset>
+						<label class="full">
+							Email
+							<input type="email" id="techEmail" required>
+						</label>
+						<label>
+							Mobile Number
+							<input type="text" id="techMobile" placeholder="09XXXXXXXXX or +639XXXXXXXXX" required>
+						</label>
+						<label>
+							Province
+							<select id="techProvince" required>
+								<option value="">Select province</option>
+							</select>
+						</label>
+						<label>
+							City / Municipality
+							<select id="techCity" required>
+								<option value="">Select city/municipality</option>
+							</select>
+						</label>
+						<div class="full tech-create-skills-wrap">
+							<span class="tech-create-skills-label">Skills</span>
+							<div id="techSkillsInput" class="tech-create-skill-options" role="group" aria-label="Select one or more technician skills">
+								<label class="tech-create-skill-option"><input type="checkbox" name="techSkillsChoice" value="HVAC Technician"><span>HVAC Technician</span></label>
+								<label class="tech-create-skill-option"><input type="checkbox" name="techSkillsChoice" value="Appliance Repair Technician"><span>Appliance Repair Technician</span></label>
+								<label class="tech-create-skill-option"><input type="checkbox" name="techSkillsChoice" value="Electrician"><span>Electrician</span></label>
+								<label class="tech-create-skill-option"><input type="checkbox" name="techSkillsChoice" value="Plumber"><span>Plumber</span></label>
+							</div>
+						</div>
+						<p class="form-note full">A password setup link will be sent to the technician's email.</p>
+
+						<div class="form-actions">
+							<button type="submit" class="btn-primary" id="createTechnicianBtn">Create Technician</button>
+						</div>
+						<p class="form-message" id="techFormMessage" role="status" aria-live="polite"></p>
+					</form>
+				</section>
+
+				<section class="panel" id="requests" data-panel="requests" hidden>
+					<div class="panel-head">
+						<h1 class="panel-title"><span id="requestsPanelTitleLabel">WAITING</span> REQUESTS</h1>
+						<button type="button" class="btn-secondary" id="refreshRequestsBtn">Refresh</button>
+					</div>
+
+					<div class="table-wrap">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>Request ID</th>
+									<th>Session Log ID</th>
+									<th>Customer</th>
+									<th>Customer ID</th>
+									<th>Status</th>
+									<th>Technician</th>
+									<th>Service</th>
+									<th>Schedule</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="requestsTableBody">
+								<tr><td colspan="9">Loading requests...</td></tr>
+							</tbody>
+						</table>
+					</div>
+
+				</section>
+
+				<section class="panel" id="session-logs" data-panel="session-logs" hidden>
+					<div class="panel-head">
+						<h1 class="panel-title">SESSION LOGS</h1>
+						<div class="panel-controls">
+							<select id="sessionRoleFilter" class="filter-select" aria-label="Filter session role">
+								<option value="customer" selected>Customers</option>
+								<option value="technician">Technicians</option>
+							</select>
+							<select id="sessionActionFilter" class="filter-select" aria-label="Filter session action">
+								<option value="login" selected>Log In</option>
+								<option value="logout">Log Out</option>
+							</select>
+							<button type="button" class="btn-secondary" id="refreshSessionLogsBtn">Refresh Logs</button>
+						</div>
+					</div>
+					<div class="table-wrap">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>Time</th>
+									<th>Session ID</th>
+									<th id="sessionUserIdHeader">Customer ID</th>
+								</tr>
+							</thead>
+							<tbody id="sessionLogsTableBody">
+								<tr><td colspan="3">Loading session logs...</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</section>
+			</main>
+		</div>
+	</div>
+
+	<div class="invite-popup-backdrop" id="inviteSentPopup" hidden>
+		<div class="invite-popup-card" role="dialog" aria-modal="true" aria-labelledby="inviteSentTitle">
+			<div class="invite-check-icon" aria-hidden="true">✓</div>
+			<h2 id="inviteSentTitle">Invite Sent</h2>
+			<p>The technician received the password setup link in email.</p>
+			<button type="button" class="btn-primary" id="closeInvitePopupBtn">OK</button>
+		</div>
+	</div>
+
+	<div class="request-detail-backdrop" id="adminRequestDetailModal" hidden>
+		<div class="request-detail-card" role="dialog" aria-modal="true" aria-labelledby="adminRequestDetailTitle">
+			<div class="request-detail-head">
+				<h2 id="adminRequestDetailTitle">Request Details</h2>
+				<button type="button" class="request-detail-close" id="adminRequestDetailCloseBtn" aria-label="Close details">x</button>
+			</div>
+			<div class="request-detail-body">
+				<p><strong>Request ID:</strong> <span id="adminDetailRequestId">-</span></p>
+				<p><strong>Customer:</strong> <span id="adminDetailCustomer">-</span></p>
+				<p><strong>Customer ID:</strong> <span id="adminDetailCustomerId">-</span></p>
+				<p><strong>Status:</strong> <span id="adminDetailStatus">-</span></p>
+				<p><strong>Service Mode:</strong> <span id="adminDetailServiceMode">-</span></p>
+				<p><strong>Service Type:</strong> <span id="adminDetailServiceType">-</span></p>
+				<p><strong>Category:</strong> <span id="adminDetailCategory">-</span></p>
+				<p><strong>Schedule:</strong> <span id="adminDetailSchedule">-</span></p>
+				<p><strong>Repair Concern:</strong> <span id="adminDetailConcern">-</span></p>
+				<p><strong>Location:</strong> <span id="adminDetailLocation">-</span></p>
+				<p><strong>Additional Details:</strong> <span id="adminDetailNotes">-</span></p>
+				<p><strong>Attachments:</strong> <span id="adminDetailAttachments">-</span></p>
+			</div>
+			<div class="request-detail-actions">
+				<button type="button" class="btn-secondary" id="adminRequestDetailDoneBtn">Close</button>
+			</div>
+		</div>
+	</div>
+
+	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+	<script src="../../firebase/config/firebase-config.js"></script>
+	<script src="../../databasehfs/users/core.js"></script>
+	<script src="../../databasehfs/users/user-profile-database.js?v=20260308m"></script>
+	<script src="../../databasehfs/users/booking-database.js?v=20260308m"></script>
+	<script src="../../databasehfs/users/user-database.js"></script>
+	<script src="../../Js/admin/dashboard.js?v=20260309p"></script>
+</body>
+</html>

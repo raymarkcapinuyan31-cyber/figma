@@ -1,0 +1,156 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Account Info - HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/account/index.css">
+   <script src="../../Js/user/side-panel/preload.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">&#9776;</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+        <div class="app-title">HomeFixSolution</div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          User <span class="caret">&#9662;</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="nav-link" href="dashboard.html">Home</a>
+        <a class="nav-link" href="book.html">Book a Service</a>
+        <a class="nav-link" href="pending.html">Service History</a>
+        <a class="nav-link" href="messages.html">Messages</a>
+        <details class="nav-group" open>
+          <summary class="nav-link active">Accounts <span class="nav-caret">&#9662;</span></summary>
+          <div class="nav-submenu">
+            <a class="nav-sub-link active" href="account.html">Profile</a>
+            <a class="nav-sub-link" href="address-book.html">Address Book</a>
+            <a class="nav-sub-link" href="security.html">Passwords</a>
+          </div>
+        </details>
+        <a class="nav-link" href="about.html">About Page</a>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content">
+        <section class="home-card account-card">
+          <div class="info-card">
+            <header class="profile-card-head">
+              <h1>Profile</h1>
+            </header>
+            <div class="profile-summary">
+              <div class="profile-avatar" id="profileAvatar" aria-hidden="true">U</div>
+              <h2 class="profile-name" id="profileDisplayName">User</h2>
+              <p class="profile-email" id="profileDisplayEmail">No email</p>
+            </div>
+            <div class="account-actions">
+              <button id="editAccountBtn" class="account-btn" type="button">EDIT</button>
+              <button id="cancelAccountBtn" class="account-btn account-btn-secondary" type="button" hidden>CANCEL</button>
+              <button id="saveAccountBtn" class="account-btn" type="button" hidden>SAVE</button>
+            </div>
+            <div class="profile-list">
+              <div class="profile-row-top">
+                <div class="col editable-col profile-item">
+                  <span class="label">First Name</span>
+                  <strong id="infoFirst" class="editable-value">Add</strong>
+                  <input id="editFirst" class="account-inline-input" type="text" autocomplete="given-name" hidden>
+                  <div id="error-editFirst" class="account-field-error" role="alert" aria-live="polite"></div>
+                </div>
+                <div class="col editable-col profile-item">
+                  <span class="label">Middle Initial</span>
+                  <strong id="infoMiddle" class="editable-value">Add</strong>
+                  <input id="editMiddle" class="account-inline-input" type="text" maxlength="1" inputmode="text" pattern="[A-Za-z]" autocomplete="additional-name" hidden>
+                  <div id="error-editMiddle" class="account-field-error" role="alert" aria-live="polite"></div>
+                </div>
+              </div>
+              <div class="col editable-col profile-item field-gap">
+                <span class="label">Last Name</span>
+                <strong id="infoLast" class="editable-value">Add</strong>
+                <input id="editLast" class="account-inline-input" type="text" autocomplete="family-name" hidden>
+                <div id="error-editLast" class="account-field-error" role="alert" aria-live="polite"></div>
+              </div>
+              <div class="col editable-col profile-item field-gap suffix-field">
+                <span class="label">Suffix</span>
+                <strong id="infoSuffix" class="editable-value">None</strong>
+                <div id="editSuffix" class="suffix-radio-group" role="radiogroup" aria-label="Choose suffix" hidden>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value=""> None</label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="Jr"> Jr</label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="Sr"> Sr</label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="II"> II</label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="III"> III</label>
+                  <label class="suffix-radio-option"><input type="radio" name="suffixOption" value="IV"> IV</label>
+                </div>
+                <div id="error-editSuffix" class="account-field-error" role="alert" aria-live="polite"></div>
+              </div>
+              <div class="col editable-col profile-item field-gap">
+                <span class="label">Date of Birth</span>
+                <strong id="infoBirthdate" class="editable-value">Add</strong>
+                <input id="editBirthdate" class="account-inline-input" type="date" hidden>
+                <div id="error-editBirthdate" class="account-field-error" role="alert" aria-live="polite"></div>
+              </div>
+              <div class="col editable-col profile-item field-gap">
+                <span class="label">Email</span>
+                <strong id="infoEmail" class="editable-value">Add</strong>
+                <input id="editEmail" class="account-inline-input account-inline-input-readonly" type="email" autocomplete="email" readonly disabled tabindex="-1" hidden>
+              </div>
+              <div class="col editable-col profile-item field-gap">
+                <span class="label">Phone Number</span>
+                <strong id="infoMobile" class="editable-value">Add</strong>
+                <input id="editMobile" class="account-inline-input" type="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX" autocomplete="tel" hidden>
+                <div id="error-editMobile" class="account-field-error" role="alert" aria-live="polite"></div>
+              </div>
+            </div>
+            <div id="accountEditError" class="account-error"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script src="../../Js/user/side-panel/buttons/home.js"></script>
+  <script src="../../Js/user/side-panel/buttons/request.js"></script>
+  <script src="../../Js/user/side-panel/buttons/history.js"></script>
+  <script src="../../Js/user/side-panel/buttons/profile.js"></script>
+  <script src="../../Js/user/side-panel/buttons/address-book.js"></script>
+  <script src="../../Js/user/side-panel/buttons/security.js"></script>
+  <script src="../../Js/user/side-panel/buttons/about.js"></script>
+  <script src="../../Js/user/side-panel/buttons/logout.js"></script>
+  <script src="../../Js/user/dashboard/parts/core.js"></script>
+  <script src="../../Js/user/dashboard/main.js"></script>
+  <script src="../../Js/user/account/helpers.js"></script>
+  <script src="../../Js/user/account/validators.js"></script>
+  <script src="../../Js/user/account/ui.js"></script>
+  <script src="../../Js/user/account/parts/core.js?v=20260304a"></script>
+  <script src="../../Js/user/account/main.js"></script>
+</body>
+</html>
+
+
+
+
+
+

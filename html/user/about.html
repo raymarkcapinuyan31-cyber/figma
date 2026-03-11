@@ -1,0 +1,116 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>About €” HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/about/index.css">
+  <script src="../../Js/user/side-panel/preload.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">˜°</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+        <div class="app-title">HomeFixSolution</div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          User <span class="caret">–¼</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="nav-link" href="dashboard.html">Home</a>
+        <a class="nav-link" href="book.html">Book a Service</a>
+        <a class="nav-link" href="pending.html">Service History</a>
+        <a class="nav-link" href="messages.html">Messages</a>
+        <details class="nav-group">
+          <summary class="nav-link">Accounts <span class="nav-caret">&#9662;</span></summary>
+          <div class="nav-submenu">
+            <a class="nav-sub-link" href="account.html">Profile</a>
+            <a class="nav-sub-link" href="address-book.html">Address Book</a>
+            <a class="nav-sub-link" href="security.html">Passwords</a>
+          </div>
+        </details>
+        <a class="nav-link active" href="about.html">About Page</a>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content">
+        <section class="home-card about-card">
+          <div class="home-intro">
+            <h1>HOMEFIXSOLUTION</h1>
+            <p>
+              HomeFixSolution is your trusted partner for fast, reliable, and affordable home repair services. From plumbing and electrical work to general handyman tasks, our certified professionals ensure every job is done right the first time. Book a service easily online, and enjoy peace of mind knowing your home is in expert hands.
+            </p>
+            <a class="book-now-btn" href="book.html">BOOK A SERVICE</a>
+          </div>
+          <div class="home-appointment-banner">
+            <p>Not just home repairs at your doorstep €” HomeFixSolution also lets you book appointments at our shop! Pick your preferred date and time for fast, reliable service, all scheduled conveniently online.</p>
+            <a class="book-appointment-btn" href="book-details.html?type=appointment">Book an Appoinment Now</a>
+          </div>
+          <div class="home-features">
+            <div class="features-kicker">FEATURES</div>
+            <h2>HomeFixSolution is packed full of features</h2>
+            <div class="features-grid">
+              <article class="feature-card">
+                <h3>Job Management</h3>
+                <p>Book and manage requests quickly in one place.</p>
+              </article>
+              <article class="feature-card">
+                <h3>Certified Professionals</h3>
+                <p>Verified technicians ensure quality work every time.</p>
+              </article>
+              <article class="feature-card">
+                <h3>Real-time Notifications</h3>
+                <p>Stay updated with request status and service progress.</p>
+              </article>
+              <article class="feature-card">
+                <h3>Assign on the Go</h3>
+                <p>Fast task assignment and dispatch for urgent needs.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script src="../../Js/user/side-panel/buttons/home.js"></script>
+  <script src="../../Js/user/side-panel/buttons/request.js"></script>
+  <script src="../../Js/user/side-panel/buttons/history.js"></script>
+  <script src="../../Js/user/side-panel/buttons/profile.js"></script>
+  <script src="../../Js/user/side-panel/buttons/address-book.js"></script>
+  <script src="../../Js/user/side-panel/buttons/security.js"></script>
+  <script src="../../Js/user/side-panel/buttons/about.js"></script>
+  <script src="../../Js/user/side-panel/buttons/logout.js"></script>
+  <script src="../../Js/user/dashboard/parts/core.js"></script>
+  <script src="../../Js/user/dashboard/main.js"></script>
+</body>
+</html>
+
+
+
+
+
+

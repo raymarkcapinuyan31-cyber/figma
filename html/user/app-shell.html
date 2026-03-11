@@ -1,0 +1,79 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/shell/index.css">
+  <script src="../../Js/user/side-panel/preload.js"></script>
+</head>
+<body>
+  <div class="app-shell shell-host">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">˜°</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+        <div class="app-title">HomeFixSolution</div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          User <span class="caret">–¼</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="nav-link" href="dashboard.html" data-shell-page="dashboard.html">Home</a>
+        <a class="nav-link" href="book.html" data-shell-page="book.html">Book a Service</a>
+        <a class="nav-link" href="pending.html" data-shell-page="pending.html">Service History</a>
+        <a class="nav-link" href="messages.html" data-shell-page="messages.html">Messages</a>
+        <details class="nav-group" id="shellAccountGroup">
+          <summary class="nav-link" id="shellAccountSummary">Accounts <span class="nav-caret">&#9662;</span></summary>
+          <div class="nav-submenu">
+            <a class="nav-sub-link" href="account.html" data-shell-page="account.html">Profile</a>
+            <a class="nav-sub-link" href="address-book.html" data-shell-page="address-book.html">Address Book</a>
+            <a class="nav-sub-link" href="security.html" data-shell-page="security.html">Passwords</a>
+          </div>
+        </details>
+        <a class="nav-link" href="about.html" data-shell-page="about.html">About Page</a>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content shell-content">
+        <div class="shell-loading" id="shellLoading" hidden>
+          <div class="shell-loading-spinner" aria-hidden="true"></div>
+          <span>Loading...</span>
+        </div>
+        <iframe id="appContentFrame" class="app-content-frame" title="HomeFixSolution Content"></iframe>
+      </main>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script src="../../Js/user/side-panel/shell.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+

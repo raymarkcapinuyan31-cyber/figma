@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Technician — HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/technician/layout/dashboard.css?v=20260308b">
+  <link rel="stylesheet" href="../../css/technician/pages/dashboard/index.css?v=20260310a">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">☰</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          Technician <span class="caret">▼</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="nav-link active" type="button" data-section="request-list">Overview</button>
+        <button class="nav-link" type="button" data-section="accepted-request">Jobs for You</button>
+        <button class="nav-link" type="button" data-section="messages-page">Messages</button>
+        <button class="nav-link" type="button" data-section="history-request">Job History</button>
+        <button class="nav-link" type="button" data-section="schedule-page">Schedule</button>
+        <details class="nav-group">
+          <summary class="nav-link">Account and Security <span class="nav-caret">▼</span></summary>
+          <div class="nav-submenu">
+            <button class="nav-sub-link" type="button" data-section="personal-information">Personal Information</button>
+            <button class="nav-sub-link" type="button" data-section="password-security">Password</button>
+          </div>
+        </details>
+        <button class="nav-link" type="button">About Page</button>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content">
+        <section class="panel" id="request-list" data-panel="request-list">
+          <p class="tech-overview-greeting" id="techGreeting">Hello, Technician</p>
+          <h1 class="panel-title panel-title-overview">OVERVIEW</h1>
+          <div class="tech-overview">
+            <div class="tech-skills-wrap">
+              <strong>Your Skills:</strong>
+              <div class="tech-skills-list" id="techSkillList">
+                <span class="tech-skill-chip">Loading...</span>
+              </div>
+            </div>
+
+            <div class="tech-overview-stats">
+              <article class="tech-stat-card">
+                <h3>Jobs for You</h3>
+                <p id="techStatTotal">0</p>
+              </article>
+              <article class="tech-stat-card">
+                <h3>Assigned to Me</h3>
+                <p id="techStatAssigned">0</p>
+              </article>
+              <article class="tech-stat-card">
+                <h3>In Progress</h3>
+                <p id="techStatInProgress">0</p>
+              </article>
+              <article class="tech-stat-card">
+                <h3>Completed</h3>
+                <p id="techStatCompleted">0</p>
+              </article>
+              <article class="tech-stat-card">
+                <h3>Average Rating</h3>
+                <p id="techStatRating">--</p>
+              </article>
+            </div>
+
+            <div class="tech-assigned-wrap">
+              <div class="tech-assigned-head">
+                <h2>Assigned Jobs</h2>
+              </div>
+              <div class="tech-assigned-list" id="techAssignedList">
+                <div class="tech-empty">Loading overview...</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="accepted-request" data-panel="accepted-request" hidden>
+          <h1 class="panel-title">JOBS FOR YOU</h1>
+          <div class="request-card-list" id="techActiveJobsList">
+            <div class="tech-empty">Loading open jobs...</div>
+          </div>
+        </section>
+
+        <section class="panel" id="messages-page" data-panel="messages-page" hidden>
+          <h1 class="panel-title">MESSAGES</h1>
+          <div class="tech-messages-shell">
+            <aside class="tech-messages-threads" id="techMessagesThreadList">
+              <div class="tech-empty">No accepted requests yet.</div>
+            </aside>
+            <section class="tech-messages-main" id="techMessagesMain">
+              <div class="tech-messages-conversation" id="techMessagesConversation">
+                <div class="tech-messages-head">
+                  <strong id="techMessagesRequestTitle">Request</strong>
+                  <span id="techMessagesRequestMeta">Accepted request chat</span>
+                </div>
+                <div class="tech-messages-peer-presence" id="techMessagesPeerPresence">Customer status: Offline</div>
+                <div class="tech-messages-chat-list" id="techMessagesChatList">
+                  <div class="tech-chat-empty">No messages yet.</div>
+                </div>
+                <form class="tech-messages-chat-form" id="techMessagesChatForm" novalidate>
+                  <input type="file" id="techMessagesAttachmentInput" class="tech-chat-attachment-input" accept="image/*,video/*" hidden>
+                  <button type="button" class="tech-chat-attach-btn" id="techMessagesAttachBtn" aria-label="Attach photo or video" title="Attach photo or video">+</button>
+                  <input type="text" id="techMessagesChatInput" maxlength="500" placeholder="Type a message..." autocomplete="off">
+                  <button type="submit" class="tech-action-btn done" id="techMessagesChatSendBtn">Send</button>
+                </form>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="history-request" data-panel="history-request" hidden>
+          <h1 class="panel-title">JOB HISTORY</h1>
+          <div class="request-card-list" id="techHistoryJobsList">
+            <div class="tech-empty">Loading job history...</div>
+          </div>
+        </section>
+
+        <section class="panel" id="schedule-page" data-panel="schedule-page" hidden>
+          <h1 class="panel-title">SCHEDULE</h1>
+          <div class="tech-calendar-shell">
+            <div class="tech-calendar-toolbar">
+              <div class="tech-calendar-nav">
+                <button class="tech-calendar-btn" type="button" id="techWeekPrev" aria-label="Previous week">‹</button>
+                <button class="tech-calendar-btn" type="button" id="techWeekNext" aria-label="Next week">›</button>
+              </div>
+              <div class="tech-calendar-title" id="techWeekTitle">This Week</div>
+              <button class="tech-calendar-btn" type="button" id="techToggleCalendar" aria-expanded="false">Calendar</button>
+            </div>
+
+            <div class="tech-schedule-body">
+              <aside class="tech-month-card" id="techMonthCard" hidden>
+                <div class="tech-month-head">
+                  <button class="tech-calendar-btn" type="button" id="techMonthPrev" aria-label="Previous month">‹</button>
+                  <div class="tech-month-title" id="techMonthTitle">Month</div>
+                  <button class="tech-calendar-btn" type="button" id="techMonthNext" aria-label="Next month">›</button>
+                </div>
+                <div class="tech-month-grid" id="techMonthGrid">
+                  <div class="tech-empty">Loading calendar...</div>
+                </div>
+              </aside>
+
+              <div class="tech-calendar-grid-wrap">
+                <div class="tech-calendar-grid" id="techScheduleGrid">
+                  <div class="tech-empty">Loading schedule...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="personal-information" data-panel="personal-information" hidden>
+          <h1 class="panel-title">ACCOUNT AND SECURITY</h1>
+
+          <form class="tech-account-form" id="techAccountForm" novalidate>
+            <fieldset class="tech-account-group">
+              <legend>Personal Information</legend>
+              <div class="tech-account-grid">
+                <label class="tech-field">
+                  <span>Technician ID</span>
+                  <input type="text" id="techAccountId" readonly>
+                </label>
+                <label class="tech-field">
+                  <span>Email Address</span>
+                  <input type="email" id="techUsername" readonly>
+                </label>
+                <label class="tech-field">
+                  <span>First Name</span>
+                  <input type="text" id="techFirstName" autocomplete="given-name" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*">
+                </label>
+                <label class="tech-field">
+                  <span>Last Name</span>
+                  <input type="text" id="techLastName" autocomplete="family-name" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*">
+                </label>
+                <label class="tech-field">
+                  <span>Middle Name</span>
+                  <input type="text" id="techMiddleName" autocomplete="additional-name" minlength="2" maxlength="15" pattern="[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*">
+                </label>
+                <label class="tech-field">
+                  <span>Mobile</span>
+                  <input type="text" id="techMobile" autocomplete="tel">
+                </label>
+                <div class="tech-field tech-field-full">
+                  <span>Skills</span>
+                  <div id="techSkillsInput" class="tech-skill-options" role="group" aria-label="Select one or more skills">
+                    <label class="tech-skill-option"><input type="checkbox" name="techSkillsChoice" value="HVAC Technician"><span>HVAC Technician</span></label>
+                    <label class="tech-skill-option"><input type="checkbox" name="techSkillsChoice" value="Appliance Repair Technician"><span>Appliance Repair Technician</span></label>
+                    <label class="tech-skill-option"><input type="checkbox" name="techSkillsChoice" value="Electrician"><span>Electrician</span></label>
+                    <label class="tech-skill-option"><input type="checkbox" name="techSkillsChoice" value="Plumber"><span>Plumber</span></label>
+                  </div>
+                  <small class="tech-field-help">Select all that apply.</small>
+                </div>
+                <label class="tech-field">
+                  <span>Province</span>
+                  <select id="techProvince">
+                    <option value="">Select province</option>
+                  </select>
+                </label>
+                <label class="tech-field">
+                  <span>City / Municipality</span>
+                  <select id="techCity">
+                    <option value="">Select city/municipality</option>
+                  </select>
+                </label>
+                <label class="tech-field">
+                  <span>Town</span>
+                  <select id="techTown">
+                    <option value="">Select town/barangay</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="tech-account-actions">
+              <button type="button" class="tech-secondary-btn" id="techAccountEditBtn">Edit Information</button>
+              <button type="button" class="tech-secondary-btn" id="techAccountCancelBtn" hidden>Cancel</button>
+              <button type="submit" class="tech-save-btn" id="techAccountSaveBtn">Save Changes</button>
+            </div>
+            <p class="tech-account-message" id="techAccountMessage" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="panel" id="password-security" data-panel="password-security" hidden>
+          <h1 class="panel-title">ACCOUNT AND SECURITY</h1>
+          <form class="tech-account-form" id="techPasswordForm" novalidate>
+            <fieldset class="tech-account-group">
+              <legend>Password</legend>
+              <div class="tech-account-grid tech-password-grid">
+                <label class="tech-field">
+                  <span>Current Password</span>
+                  <input type="password" id="techCurrentPassword" autocomplete="current-password">
+                </label>
+                <label class="tech-field">
+                  <span>New Password</span>
+                  <input type="password" id="techNewPassword" autocomplete="new-password">
+                </label>
+                <label class="tech-field">
+                  <span>Confirm New Password</span>
+                  <input type="password" id="techConfirmPassword" autocomplete="new-password">
+                </label>
+              </div>
+              <p class="tech-account-note">Password must be 8-12 characters with uppercase, lowercase, number, and special character.</p>
+            </fieldset>
+
+            <div class="tech-account-actions">
+              <button type="submit" class="tech-save-btn" id="techPasswordSaveBtn">Change Password</button>
+              <button type="button" class="tech-secondary-btn" id="techForgotPasswordBtn">Forgot Password</button>
+            </div>
+            <p class="tech-account-message" id="techPasswordMessage" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="tech-modal-backdrop" id="techOnboardingModal" hidden>
+    <div class="tech-modal-card tech-onboarding-card" role="dialog" aria-modal="true" aria-labelledby="techOnboardingTitle">
+      <div class="tech-modal-head">
+        <h2 id="techOnboardingTitle">Welcome, Technician</h2>
+      </div>
+      <form class="tech-modal-body tech-onboarding-body" id="techOnboardingForm" novalidate>
+        <p class="tech-onboarding-copy">Complete your profile setup so the system can match you with the right requests.</p>
+        <label class="tech-field">
+          <span>Mobile Number</span>
+          <input type="text" id="techOnboardMobile" placeholder="09XXXXXXXXX or +639XXXXXXXXX" required>
+        </label>
+        <div class="tech-field">
+          <span>Skills</span>
+          <div id="techOnboardSkills" class="tech-skill-options" role="group" aria-label="Select one or more skills">
+            <label class="tech-skill-option"><input type="checkbox" name="techOnboardSkillsChoice" value="HVAC Technician"><span>HVAC Technician</span></label>
+            <label class="tech-skill-option"><input type="checkbox" name="techOnboardSkillsChoice" value="Appliance Repair Technician"><span>Appliance Repair Technician</span></label>
+            <label class="tech-skill-option"><input type="checkbox" name="techOnboardSkillsChoice" value="Electrician"><span>Electrician</span></label>
+            <label class="tech-skill-option"><input type="checkbox" name="techOnboardSkillsChoice" value="Plumber"><span>Plumber</span></label>
+          </div>
+          <small class="tech-field-help">Select all that apply.</small>
+        </div>
+        <label class="tech-field">
+          <span>Province</span>
+          <select id="techOnboardProvince" required>
+            <option value="">Select province</option>
+          </select>
+        </label>
+        <label class="tech-field">
+          <span>City / Municipality</span>
+          <select id="techOnboardCity" required>
+            <option value="">Select city/municipality</option>
+          </select>
+        </label>
+        <label class="tech-field">
+          <span>Town / Barangay</span>
+          <select id="techOnboardTown" required>
+            <option value="">Select town/barangay</option>
+          </select>
+        </label>
+        <label class="tech-field">
+          <span>Years of Experience (optional)</span>
+          <input type="number" id="techOnboardExperience" min="0" max="60" placeholder="e.g. 5">
+        </label>
+        <label class="tech-field">
+          <span>Certifications (optional)</span>
+          <input type="text" id="techOnboardCertifications" placeholder="e.g. NC II, TESDA Plumbing">
+        </label>
+        <p class="tech-account-message" id="techOnboardingMessage" role="status" aria-live="polite"></p>
+      </form>
+      <div class="tech-modal-actions">
+        <button type="button" class="tech-view-btn" id="techOnboardingLaterBtn">Later</button>
+        <button type="button" class="tech-action-btn done" id="techOnboardingSaveBtn">Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tech-modal-backdrop" id="techDetailModal" hidden>
+    <div class="tech-modal-card" role="dialog" aria-modal="true" aria-labelledby="techDetailTitle">
+      <div class="tech-modal-head">
+        <h2 id="techDetailTitle">Request Details</h2>
+        <button type="button" class="tech-modal-close" id="techDetailCloseBtn" aria-label="Close details">✕</button>
+      </div>
+      <div class="tech-modal-body">
+        <p><strong>Request:</strong> <span id="techDetailRequest">-</span></p>
+        <p><strong>Request ID:</strong> <span id="techDetailRequestId">-</span></p>
+        <p><strong>Status:</strong> <span id="techDetailStatus">-</span></p>
+        <p><strong>Customer:</strong> <span id="techDetailCustomer">-</span></p>
+        <p><strong>Service Type:</strong> <span id="techDetailServiceType">-</span></p>
+        <p><strong>Category:</strong> <span id="techDetailCategory">-</span></p>
+        <p><strong>Repair Concern:</strong> <span id="techDetailRepairConcern">-</span></p>
+        <p><strong>Schedule:</strong> <span id="techDetailSchedule">-</span></p>
+        <p><strong>Location:</strong> <span id="techDetailLocation">-</span></p>
+        <p><strong>Details:</strong> <span id="techDetailDetails">-</span></p>
+        <p><strong>Media Attachment:</strong> <span id="techDetailMedia">-</span></p>
+
+      </div>
+      <div class="tech-modal-actions">
+        <button type="button" class="tech-view-btn" id="techDetailChatBtn" hidden>Chat with Customer</button>
+        <button type="button" class="tech-action-btn done" id="techDetailDoneBtn">Done</button>
+        <button type="button" class="tech-view-btn" id="techDetailCloseSecondaryBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/technician/dashboard/parts/core.js?v=20260309b"></script>
+  <script src="../../Js/technician/dashboard/main.js?v=20260310c"></script>
+</body>
+</html>

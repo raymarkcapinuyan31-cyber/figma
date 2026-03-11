@@ -1,0 +1,152 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Roboto, Arial, sans-serif; }
+body { background: #f3f6fb; color: #1f2d3d; }
+
+.onboard-shell {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.onboard-card {
+  width: 100%;
+  max-width: 560px;
+  background: #fff;
+  border: 1px solid #dfe6f1;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 14px 34px rgba(16, 37, 62, 0.12);
+}
+
+.onboard-card h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  color: #15304d;
+}
+
+.onboard-subtitle {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: #52657a;
+}
+
+.onboard-form {
+  display: grid;
+  gap: 10px;
+}
+
+.onboard-form > label,
+.onboard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #3f4f63;
+}
+
+.onboard-field-label {
+  font-size: 13px;
+  color: #3f4f63;
+}
+
+.onboard-form input,
+.onboard-form select {
+  min-height: 40px;
+  border: 1px solid #ccd8ea;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  background: #fff;
+  color: #1f2d3d;
+}
+
+.onboard-skill-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.onboard-skill-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid #ccd8ea;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2d3d;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+
+.onboard-skill-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0f49e9;
+}
+
+.onboard-skill-option:hover {
+  border-color: #9eb8e6;
+  background: #f6f9ff;
+}
+
+.onboard-skill-option:has(input:checked) {
+  border-color: #0f49e9;
+  background: #eaf1ff;
+  box-shadow: inset 0 0 0 1px rgba(15, 73, 233, 0.08);
+}
+
+.onboard-skill-options.invalid {
+  padding: 8px;
+  border: 1px solid #d93025;
+  border-radius: 10px;
+  background: #fff7f7;
+}
+
+.onboard-help {
+  font-size: 11px;
+  color: #5d6f84;
+}
+
+.onboard-message {
+  min-height: 18px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3d5977;
+}
+
+.onboard-message.error { color: #c0392b; }
+.onboard-message.success { color: #1f7a45; }
+
+.onboard-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.onboard-actions button {
+  border: 1px solid #0f49e9;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: #0f49e9;
+  cursor: pointer;
+}
+
+.onboard-actions button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .onboard-skill-options {
+    grid-template-columns: 1fr;
+  }
+}

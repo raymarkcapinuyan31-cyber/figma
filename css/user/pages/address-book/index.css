@@ -1,0 +1,76 @@
+.address-card{align-items:center}
+.address-card h1{margin:2px 0 18px;font-size:44px;text-align:center}
+#addressFormWrap{width:100%;max-width:900px}
+.address-form{width:100%;max-width:900px;display:flex;flex-direction:column;gap:14px;margin-top:12px}
+.field-label{font-size:15px;font-weight:700;color:#444;margin-top:2px}
+.field{width:100%;border-radius:12px;border:1px solid #d3d3d3;background:#fff;padding:14px 16px;font-size:16px;min-height:58px}
+.field#additionalDetails{min-height:110px;resize:vertical;max-height:220px}
+.field-error{min-height:18px;margin-top:-6px;font-size:14px;color:#d9534f}
+.field.invalid{border-color:#d9534f;box-shadow:0 0 0 3px rgba(217,83,79,0.08)}
+.actions-row{display:flex;justify-content:center}
+.add-new-row{margin-top:10px}
+.save-btn{border:none;background:#0f49e9;color:#fff;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:700}
+.add-new-row .save-btn{width:100%;max-width:900px;min-height:58px;font-size:18px;letter-spacing:0.3px}
+.save-btn-secondary{background:#f2f2f2;color:#222;border:1px solid #cfcfcf}
+
+.address-list{width:100%;max-width:900px;display:flex;flex-direction:column;gap:12px;align-self:center}
+.address-item{border:1px solid #d8d8d8;border-radius:10px;background:#fff;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.address-content{display:flex;flex-direction:column;gap:4px}
+.address-content strong{font-size:16px;color:#222}
+.address-content span{font-size:14px;color:#555;line-height:1.45;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+.address-actions{display:flex;gap:8px}
+.edit-address-btn{border:1px solid #d4d4d4;background:#f3f3f3;border-radius:8px;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.edit-address-btn img{width:22px;height:22px;display:block;opacity:.86}
+.edit-address-btn:hover{background:#e9e9e9}
+.delete-address-btn{border:1px solid #e2b4b4;background:#fff5f5;color:#b03a3a;border-radius:8px;height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.2px}
+.delete-address-btn:hover{background:#ffeaea}
+
+.delete-address-modal{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
+.delete-address-modal[hidden]{display:none}
+.delete-address-modal-card{width:100%;max-width:330px;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,0.18);padding:18px 16px;text-align:center}
+.delete-address-modal-card h2{margin:0 0 8px;font-size:21px;line-height:1.2;color:#222}
+.delete-address-modal-card p{margin:0;color:#555;font-size:14px}
+.delete-address-modal-actions{display:flex;justify-content:center;gap:10px;margin-top:16px}
+.modal-btn{min-width:120px;border:1px solid #111;background:#111;color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer}
+.modal-btn-secondary{border-color:#cfcfcf;background:#f3f3f3;color:#222}
+
+.address-notice-modal{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:85;padding:16px}
+.address-notice-modal[hidden]{display:none}
+.address-notice-card{position:relative;width:100%;max-width:330px;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,0.18);padding:16px 16px 14px;text-align:center}
+.address-notice-card h2{margin:0 0 8px;font-size:20px;line-height:1.2;color:#222}
+.address-notice-card p{margin:0;color:#444;font-size:14px}
+.address-notice-actions{display:flex;justify-content:center;margin-top:14px}
+
+.address-form .actions-row{gap:12px}
+.address-form .actions-row .save-btn{min-height:50px;font-size:15px;padding:10px 20px}
+
+@media(max-width:1200px){
+  .address-card h1{font-size:30px}
+}
+
+.address-card{
+  font-family:"Plus Jakarta Sans","Segoe UI",Tahoma,sans-serif;
+  padding:28px;
+  background:
+    radial-gradient(760px 220px at 88% -4%, rgba(104, 176, 255, 0.16) 0%, rgba(104, 176, 255, 0) 62%),
+    radial-gradient(540px 190px at 8% 0%, rgba(13, 97, 188, 0.10) 0%, rgba(13, 97, 188, 0) 64%),
+    linear-gradient(180deg, #f3f8ff 0%, #f8f9fb 34%, #f5f5f6 100%);
+}
+
+.address-card h1{font-size:40px;color:#081d33;letter-spacing:-0.01em}
+.address-form,
+.address-list,
+#addressFormWrap{max-width:960px}
+
+.field{border-color:#bfd2e8;border-radius:12px}
+.field:focus{outline:none;border-color:#1765c1;box-shadow:0 0 0 2px rgba(23,101,193,.14)}
+
+.address-item{border-color:#cfe0f1;border-radius:12px;background:linear-gradient(180deg,#fff 0%,#f7fbff 100%)}
+
+.save-btn{border:1px solid #0f58b0;background:linear-gradient(180deg,#1d6cca 0%,#1256ab 100%);border-radius:10px;transition:all .2s ease}
+.save-btn:hover{transform:translateY(-1px);filter:brightness(1.04)}
+
+.edit-address-btn,
+.delete-address-btn{transition:all .2s ease}
+.edit-address-btn:hover,
+.delete-address-btn:hover{transform:translateY(-1px)}

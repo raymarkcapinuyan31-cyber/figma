@@ -1,0 +1,161 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Select Address €” HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/select-address/index.css">
+  <script src="../../Js/user/side-panel/preload.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">˜°</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+        <div class="app-title">HomeFixSolution</div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          User <span class="caret">–¼</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="nav-link" href="dashboard.html">Home</a>
+        <a class="nav-link active" href="book.html">Book a Service</a>
+        <a class="nav-link" href="pending.html">Service History</a>
+        <a class="nav-link" href="messages.html">Messages</a>
+        <details class="nav-group">
+          <summary class="nav-link">Accounts <span class="nav-caret">&#9662;</span></summary>
+          <div class="nav-submenu">
+            <a class="nav-sub-link" href="account.html">Profile</a>
+            <a class="nav-sub-link" href="address-book.html">Address Book</a>
+            <a class="nav-sub-link" href="security.html">Passwords</a>
+          </div>
+        </details>
+        <a class="nav-link" href="about.html">About Page</a>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content">
+        <section class="home-card select-address-card">
+          <h1>SELECT ADDRESS</h1>
+          <p class="help">Choose one saved address for this booking request.</p>
+
+          <form id="selectAddressForm" class="address-picker-form">
+            <div id="addressOptions" class="address-options"></div>
+
+            <div id="quickAddressWrap" class="quick-address" hidden>
+              <h3>Add Address</h3>
+              <p>No saved address yet. Add one here to continue your request.</p>
+              <div class="quick-grid">
+                <input id="quickHouseUnit" class="quick-input" type="text" placeholder="House No. / Unit No.">
+                <input id="quickStreetName" class="quick-input" type="text" placeholder="Street Name">
+                <select id="quickBarangay" class="quick-input">
+                  <option value="">Select Barangay</option>
+                  <option>Bacayao Norte</option>
+                  <option>Bacayao Sur</option>
+                  <option>Barangay I (Poblacion)</option>
+                  <option>Barangay II (Poblacion)</option>
+                  <option>Barangay III (Poblacion)</option>
+                  <option>Barangay IV (Poblacion)</option>
+                  <option>Barangay V (Poblacion)</option>
+                  <option>Barangay VI (Poblacion)</option>
+                  <option>Barangay VII</option>
+                  <option>Barangay VIII</option>
+                  <option>Bonuan Boquig</option>
+                  <option>Bonuan Binloc</option>
+                  <option>Bonuan Gueset</option>
+                  <option>Calmay</option>
+                  <option>Carael</option>
+                  <option>Herrero-Perez</option>
+                  <option>Lasip Chico</option>
+                  <option>Lasip Grande</option>
+                  <option>Lomboy</option>
+                  <option>Lucao</option>
+                  <option>Malued</option>
+                  <option>Mamalingling</option>
+                  <option>Mangin</option>
+                  <option>Mayombo</option>
+                  <option>Pantal</option>
+                  <option>Pogo Chico</option>
+                  <option>Pogo Grande</option>
+                  <option>Salapingao</option>
+                  <option>Tambac</option>
+                  <option>Tapuac</option>
+                  <option>Tebeng</option>
+                  <option>Tocok</option>
+                </select>
+                <textarea id="quickAdditionalDetails" class="quick-input" rows="5" maxlength="300" placeholder="Additional Details (Landmark / Notes)"></textarea>
+              </div>
+              <div class="quick-actions">
+                <button class="form-btn" id="quickSaveAddressBtn" type="button">SAVE ADDRESS</button>
+              </div>
+              <div id="quickAddressError" class="quick-error"></div>
+            </div>
+
+            <div class="actions-row">
+              <a class="form-btn" href="book.html">BACK</a>
+              <button class="form-btn" id="confirmAddressBtn" type="submit">CONFIRM</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="requestSubmittedModal" class="request-modal" hidden>
+    <div class="request-modal-card" role="dialog" aria-modal="true" aria-labelledby="requestSubmittedTitle">
+      <button type="button" class="request-modal-close" id="closeRequestModalBtn" aria-label="Close confirmation panel">Ã—</button>
+      <div class="request-success-icon" aria-hidden="true">
+        <img src="../../images/icons/success-check-circle.svg" alt="">
+      </div>
+      <h2 id="requestSubmittedTitle">Request Submitted!</h2>
+      <p class="request-id">Request ID: <strong id="requestSubmittedId">HFS-00000</strong></p>
+      <p class="request-success-text">You will be notified once accepted.</p>
+      <div class="request-modal-actions">
+        <button type="button" class="form-btn" id="viewRequestBtn">View Service History</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script src="../../Js/user/side-panel/buttons/home.js"></script>
+  <script src="../../Js/user/side-panel/buttons/request.js"></script>
+  <script src="../../Js/user/side-panel/buttons/history.js"></script>
+  <script src="../../Js/user/side-panel/buttons/profile.js"></script>
+  <script src="../../Js/user/side-panel/buttons/address-book.js"></script>
+  <script src="../../Js/user/side-panel/buttons/security.js"></script>
+  <script src="../../Js/user/side-panel/buttons/about.js"></script>
+  <script src="../../Js/user/side-panel/buttons/logout.js"></script>
+  <script src="../../Js/user/dashboard/parts/core.js"></script>
+  <script src="../../Js/user/dashboard/main.js"></script>
+  <script src="../../Js/user/select-address/parts/core.js"></script>
+  <script src="../../Js/user/select-address/index.js"></script>
+</body>
+</html>
+
+
+
+
+
+

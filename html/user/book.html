@@ -1,0 +1,100 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Select Service Mode €” HomeFixSolution</title>
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
+  <link rel="stylesheet" href="../../css/user/pages/book/index.css">
+  <script src="../../Js/user/side-panel/preload.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">˜°</button>
+        <div class="logo-wrapper" aria-hidden="true">
+          <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+        </div>
+        <div class="app-title">HomeFixSolution</div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          User <span class="caret">–¼</span>
+        </button>
+        <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
+          <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="nav-link" href="dashboard.html">Home</a>
+        <a class="nav-link active" href="book.html">Book a Service</a>
+        <a class="nav-link" href="pending.html">Service History</a>
+        <a class="nav-link" href="messages.html">Messages</a>
+        <details class="nav-group">
+          <summary class="nav-link">Accounts <span class="nav-caret">&#9662;</span></summary>
+          <div class="nav-submenu">
+            <a class="nav-sub-link" href="account.html">Profile</a>
+            <a class="nav-sub-link" href="address-book.html">Address Book</a>
+            <a class="nav-sub-link" href="security.html">Passwords</a>
+          </div>
+        </details>
+        <a class="nav-link" href="about.html">About Page</a>
+        <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
+      </aside>
+
+      <main class="content">
+        <section class="home-card book-type-card">
+          <h1>SELECT SERVICE MODE</h1>
+
+          <form class="book-type-form" id="serviceTypeForm" novalidate>
+            <div class="booking-type-box" id="bookingTypeBox">
+              <label class="booking-type-option">
+                <input type="radio" name="booking_type" value="appointment">
+                <span>Drop-Off at Store</span>
+              </label>
+              <label class="booking-type-option">
+                <input type="radio" name="booking_type" value="technician">
+                <span>Home Service</span>
+              </label>
+            </div>
+            <div class="field-error" id="error-bookingType"></div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../../firebase/config/firebase-config.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/user-database.js"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script src="../../Js/user/side-panel/buttons/home.js"></script>
+  <script src="../../Js/user/side-panel/buttons/request.js"></script>
+  <script src="../../Js/user/side-panel/buttons/history.js"></script>
+  <script src="../../Js/user/side-panel/buttons/profile.js"></script>
+  <script src="../../Js/user/side-panel/buttons/address-book.js"></script>
+  <script src="../../Js/user/side-panel/buttons/security.js"></script>
+  <script src="../../Js/user/side-panel/buttons/about.js"></script>
+  <script src="../../Js/user/side-panel/buttons/logout.js"></script>
+  <script src="../../Js/user/dashboard/parts/core.js"></script>
+  <script src="../../Js/user/dashboard/main.js"></script>
+  <script src="../../Js/user/request/service-type/parts/core.js"></script>
+  <script src="../../Js/user/request/service-type/index.js"></script>
+</body>
+</html>
+
+
+
+
+
+
