@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Login - HomeFixSolution</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://firebasedatabase.googleapis.com" crossorigin>
@@ -12,36 +15,47 @@
 <body>
   <div class="container">
     <div class="card">
-      <div class="left">
+      <section class="left" aria-label="HomeFixSolution overview">
         <div class="logo-wrapper">
           <img src="images/logos/homefixlogo.png" alt="HomeFixSolution logo">
         </div>
-        <div class="tagline">HomeFixSolution - Your Trusted Home Tech Partner</div>
-      </div>
-      <div class="right">
-        <div class="title">HOMEFIXSOLUTION</div>
+        <h1 class="hero-title">HomeFixSolution</h1>
+        <p class="tagline">Fast booking. Trusted technicians.</p>
+      </section>
+      <section class="right" aria-label="Login form">
+        <div class="auth-shell">
+          <h2 class="title">Log In</h2>
 
-        <div class="input-wrapper">
-          <label class="input-label" for="email">EMAIL:</label>
-          <div class="field">
-            <input id="email" class="input" type="text" placeholder="example@example.com" aria-label="email" aria-describedby="error-email">
+          <form id="loginForm" class="login-form" novalidate>
+            <div class="input-wrapper">
+              <label class="input-label" for="email">Email address</label>
+              <div class="field">
+                <span class="field-icon" aria-hidden="true">@</span>
+                <input id="email" class="input" type="text" placeholder="example@example.com" autocomplete="username" aria-label="email" aria-describedby="error-email">
+              </div>
+              <div class="error-message" id="error-email" role="alert" aria-live="assertive"></div>
+            </div>
+
+            <div class="input-wrapper">
+              <label class="input-label" for="password">Password</label>
+              <div class="field">
+                <span class="field-icon" aria-hidden="true">*</span>
+                <input id="password" class="input" type="password" placeholder="Enter your password" autocomplete="current-password" aria-label="password" aria-describedby="error-password">
+                <button type="button" class="password-toggle" data-target="#password" aria-label="Show password" aria-pressed="false">
+                  <img src="images/icons/eye-closed.svg" alt="Show password">
+                </button>
+              </div>
+              <a class="forgot-link" href="html/user/forgot-password.html">Forgot password?</a>
+              <div class="error-message" id="error-password" role="alert" aria-live="assertive"></div>
+            </div>
+
+            <button class="btn" id="loginBtn" type="submit">Log In</button>
+          </form>
+
+          <div class="auth-footer">
+            <a class="create-account" href="html/user/register.html">Create account</a>
           </div>
-          <div class="error-message" id="error-email" role="alert" aria-live="assertive"></div>
         </div>
-
-        <div class="input-wrapper">
-          <label class="input-label" for="password">PASSWORD:</label>
-          <div class="field">
-            <input id="password" class="input" type="password" placeholder="Password" aria-label="password" aria-describedby="error-password">
-            <button type="button" class="password-toggle" data-target="#password" aria-label="Show password" aria-pressed="false">
-              <img src="images/icons/eye-closed.svg" alt="Show password">
-            </button>
-          </div>
-          <div class="error-message" id="error-password" role="alert" aria-live="assertive"></div>
-        </div>
-
-        <button class="btn" id="loginBtn" type="button">LOG IN</button>
-        <a class="create-account" href="html/user/register.html">CREATE ACCOUNT</a>
 
         <!-- Firebase SDKs (compat) + project wrapper - replace config values in databasehfs/users/user-database.js -->
         <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -50,15 +64,15 @@
         <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"></script>
         <script src="firebase/config/firebase-config.js"></script>
-        <script src="databasehfs/users/core.js?v=20260304a"></script>
-        <script src="databasehfs/users/user-profile-database.js?v=20260309a"></script>
+        <script src="databasehfs/users/core.js?v=20260312a"></script>
+        <script src="databasehfs/users/user-profile-database.js?v=20260312a"></script>
         <script src="databasehfs/users/booking-database.js"></script>
         <script src="databasehfs/users/user-database.js"></script>
         <script src="Js/user/login/utils.js?v=20260308c"></script>
-        <script src="Js/user/login/submit.js?v=20260309e"></script>
+        <script src="Js/user/login/submit.js?v=20260312c"></script>
         <script src="Js/user/login/parts/core.js?v=20260308c"></script>
         <script src="Js/user/login/main.js?v=20260308c"></script>
-      </div>
+      </section>
     </div>
   </div>
 </body>

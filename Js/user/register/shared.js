@@ -2,6 +2,7 @@
   const ns = (window.hfsRegister = window.hfsRegister || {});
 
   ns.nameRegex = /^[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*$/;
+  ns.nameAllowedRegex = /^[A-Za-z\s-]+$/;
   ns.emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
   ns.mobileRegex = /^(09\d{9}|\+639\d{9})$/;
   ns.passwordRegex = /^(?=.{8,}$)(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s])\S+$/;
@@ -15,8 +16,39 @@
       .trim()
       .replace(/\s+/g, ' ')
       .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((word) => word
+        .split('-')
+        .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part)
+        .join('-'))
       .join(' ');
+  };
+
+  ns.validatePersonName = function validatePersonName(value, options) {
+    const settings = options || {};
+    const raw = String(value || '');
+    const label = String(settings.label || 'Name');
+    const isRequired = settings.required !== false;
+
+    if (!raw.trim()) {
+      return isRequired ? `${label} is required.` : null;
+    }
+
+    if (/^\s+|\s+$/.test(raw)) return 'Remove extra spaces.';
+    if (/\s{2,}/.test(raw)) return 'One space only.';
+    if (/--/.test(raw)) return 'One hyphen only.';
+
+    const clean = raw.trim();
+    if (clean.length < 2 || clean.length > 15) return 'Use 2 to 15 letters.';
+
+    const parts = clean.split(' ').filter(Boolean);
+    if (parts.length > 1 && parts.every((part) => part.length === 1)) {
+      return 'Enter full name.';
+    }
+
+    if (/\d/.test(clean)) return 'No numbers.';
+    if (!ns.nameAllowedRegex.test(clean)) return 'No special characters (e.g., Anne-Marie).';
+    if (!ns.nameRegex.test(clean)) return `Enter a valid ${label.toLowerCase()}.`;
+    return null;
   };
 
   ns.getDaysInMonth = function getDaysInMonth(month) {

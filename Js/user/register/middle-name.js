@@ -9,6 +9,8 @@
   ns.validateMiddleNameField = function validateMiddleNameField(el) {
     const raw = String((el && el.value) || '');
     if (!raw.trim()) return null;
+    if (/\d/.test(raw)) return 'No numbers.';
+    if (/[^A-Za-z\s]/.test(raw)) return 'Letters only.';
     const normalized = ns.normalizeMiddleInitial(raw);
     if (!normalized) return 'Enter one letter only.';
     if (normalized.length !== 1) return 'Enter one letter only.';

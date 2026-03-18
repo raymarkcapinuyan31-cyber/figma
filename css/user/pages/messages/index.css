@@ -27,6 +27,13 @@
 .messages-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid #e4edf7}
 .messages-head strong{font-size:14px;color:#163355}
 .messages-head span{font-size:11px;color:#577191}
+.messages-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.messages-report-btn{position:relative;width:36px;height:30px;border:none;background:transparent;padding:0;cursor:pointer;transition:transform .2s ease,filter .2s ease}
+.messages-report-btn::before{content:'';position:absolute;inset:0;clip-path:polygon(50% 3%, 2% 97%, 98% 97%);background:linear-gradient(180deg,#ff6a5e 0%,#ff3a3a 52%,#e20f27 100%);box-shadow:0 6px 14px rgba(194,18,38,.32), inset 0 1px 0 rgba(255,255,255,.28)}
+.messages-report-icon{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);font-size:15px;line-height:1;font-weight:900;color:#fff;text-shadow:0 1px 1px rgba(126,0,8,.35)}
+.messages-report-btn:hover{transform:translateY(-1px) scale(1.04);filter:saturate(1.08)}
+.messages-report-btn:focus-visible{outline:2px solid rgba(226,15,39,.35);outline-offset:2px;border-radius:4px}
+.messages-report-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
 .messages-assigned-tech{margin:10px 12px 0;padding:8px 11px;border:1px solid #d2e1f2;border-radius:10px;background:linear-gradient(180deg,#f8fbff 0%,#edf5ff 100%);color:#183b61;font-size:12px;font-weight:700}
 .messages-list{padding:10px;display:flex;flex-direction:column;gap:8px;overflow:auto;min-height:180px}
 .messages-empty{border:1px dashed #ced9e5;border-radius:10px;padding:14px;color:#5a6c80;font-size:13px;text-align:center;background:#fbfdff}
@@ -51,6 +58,28 @@
 
 .messages-media-wrap{margin-bottom:6px}
 .messages-media{max-width:100%;max-height:260px;border:1px solid #d7e4f4;border-radius:8px;background:#000}
+
+.messages-report-modal,.messages-report-success{position:fixed;inset:0;background:rgba(10,24,44,.46);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1200}
+.messages-report-modal[hidden],.messages-report-success[hidden]{display:none}
+.messages-report-card{width:min(460px,100%);background:#fff;border:1px solid #d7e4f5;border-radius:14px;box-shadow:0 22px 40px rgba(17,49,93,.24);overflow:hidden}
+.messages-report-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e5edf8}
+.messages-report-head h2{margin:0;font-size:20px;color:#132f50}
+.messages-report-close{border:none;background:#f3f7fd;color:#476388;font-size:16px;font-weight:800;line-height:1;border-radius:8px;width:30px;height:30px;cursor:pointer}
+.messages-report-form{display:flex;flex-direction:column;gap:8px;padding:14px 16px 16px}
+.messages-report-form label{font-size:12px;font-weight:800;color:#284768;letter-spacing:.2px}
+.messages-report-form select,.messages-report-form input,.messages-report-form textarea{width:100%;border:1px solid #c7d8ed;border-radius:10px;padding:10px 11px;font-size:13px;color:#223f5d;background:#fff}
+.messages-report-form textarea{resize:vertical;min-height:96px}
+.messages-report-form select:focus,.messages-report-form input:focus,.messages-report-form textarea:focus{outline:none;border-color:#1d66be;box-shadow:0 0 0 2px rgba(29,102,190,.13)}
+.messages-report-error{min-height:16px;margin:2px 0 0;color:#bc2231;font-size:12px;font-weight:700}
+.messages-report-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:2px}
+.messages-report-cancel{border:1px solid #c8d7ea;background:#f3f7fd;color:#274665;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;cursor:pointer}
+.messages-report-submit{border:1px solid #b01324;background:linear-gradient(180deg,#ec364a 0%,#cc1d33 100%);color:#fff;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:800;cursor:pointer}
+.messages-report-submit:disabled{opacity:.58;cursor:not-allowed}
+.messages-report-success-card{width:min(350px,100%);background:#fff;border:1px solid #d7e4f5;border-radius:14px;box-shadow:0 20px 36px rgba(17,49,93,.24);padding:18px 16px;text-align:center}
+.messages-report-success-card h3{margin:0 0 8px;font-size:20px;color:#123455}
+.messages-report-success-card p{margin:0 0 14px;font-size:14px;color:#445f7b}
+.messages-report-success-btn{border:1px solid #1a63bd;background:#1a63bd;color:#fff;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer}
+.messages-report-confirm-actions{justify-content:center;padding-top:0}
 
 @media(max-width:1200px){
   .messages-card{padding:16px}

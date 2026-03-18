@@ -10,9 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const houseUnitError = document.getElementById('error-houseUnit');
   const streetNameError = document.getElementById('error-streetName');
   const barangayError = document.getElementById('error-barangay');
+  const additionalDetailsError = document.getElementById('error-additionalDetails');
   const cancelBtn = document.getElementById('cancelAddressBtn');
 
-  if (!form || !houseUnitInput || !streetNameInput || !barangaySelect || !additionalDetailsInput || !houseUnitError || !streetNameError || !barangayError || !cancelBtn || !usersDb || !usersDb.auth) return;
+  if (!form || !houseUnitInput || !streetNameInput || !barangaySelect || !additionalDetailsInput || !houseUnitError || !streetNameError || !barangayError || !additionalDetailsError || !cancelBtn || !usersDb || !usersDb.auth) return;
 
   let activeUser = null;
 
@@ -24,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ns.clearFieldError(houseUnitInput, houseUnitError);
     ns.clearFieldError(streetNameInput, streetNameError);
     ns.clearFieldError(barangaySelect, barangayError);
+    ns.clearFieldError(additionalDetailsInput, additionalDetailsError);
   }
 
   function hasDigit(value) {
@@ -43,6 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return /^[A-Za-z0-9.,'/\-\s]+$/.test(String(value || ''));
   }
 
+  function isValidAdditionalDetailsFormat(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
+  }
+
   cancelBtn.addEventListener('click', () => {
     goBackToAddressBook();
   });
@@ -53,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const houseUnit = houseUnitInput.value.replace(/\s+/g, ' ').trim();
     const streetName = streetNameInput.value.replace(/\s+/g, ' ').trim();
     const barangay = barangaySelect.value.trim();
-    const additionalDetails = additionalDetailsInput.value.trim();
+    const additionalDetails = additionalDetailsInput.value.replace(/\s+/g, ' ').trim();
 
     clearErrors();
     let hasError = false;
@@ -79,10 +85,16 @@ document.addEventListener('DOMContentLoaded', () => {
       hasError = true;
     }
 
+    if (additionalDetails && !isValidAdditionalDetailsFormat(additionalDetails)) {
+      ns.setFieldError(additionalDetailsInput, additionalDetailsError, 'Landmark/details can only use letters, numbers, spaces, commas, and hyphens.');
+      hasError = true;
+    }
+
     if (hasError || !activeUser || !activeUser.uid) return;
 
     houseUnitInput.value = houseUnit;
     streetNameInput.value = streetName;
+    additionalDetailsInput.value = additionalDetails;
 
     const payload = { houseUnit, streetName, barangay, additionalDetails };
 

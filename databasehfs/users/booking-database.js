@@ -105,6 +105,24 @@
     return booking;
   }
 
+  function normalizeFreeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isValidRequestIssueFormat(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
+  }
+
+  function normalizeRequestIssueValue(value) {
+    const issue = normalizeFreeText(value);
+    if (issue && !isValidRequestIssueFormat(issue)) {
+      const err = new Error('Request details can only use letters, numbers, spaces, commas, and hyphens.');
+      err.code = 'validation/invalid-request-details';
+      throw err;
+    }
+    return issue;
+  }
+
   function normalizeRequestDetails(rawBooking) {
     const booking = Object.assign({}, rawBooking || {});
     const details = booking.requestDetails && typeof booking.requestDetails === 'object'
@@ -116,7 +134,10 @@
       category: String(details.category || booking.category || '').trim(),
       selectedOptionLabel: String(details.selectedOptionLabel || '').trim(),
       selectedOptionValue: String(details.selectedOptionValue || booking.serviceName || booking.deviceType || booking.device || '').trim(),
-      issue: String(details.issue || booking.issue || booking.description || '').trim()
+      selectedTechnicianName: String(details.selectedTechnicianName || booking.assignedTechnicianName || booking.technicianName || '').trim(),
+      selectedTechnicianId: String(details.selectedTechnicianId || booking.assignedTechnicianId || booking.technicianId || '').trim(),
+      selectedTechnicianEmail: String(details.selectedTechnicianEmail || booking.assignedTechnicianEmail || booking.technicianEmail || '').trim().toLowerCase(),
+      issue: normalizeRequestIssueValue(details.issue || booking.issue || booking.description)
     };
   }
 
@@ -187,7 +208,14 @@
       createdAt: createdAtValue,
       serviceMode: normalizeServiceMode(booking),
       bookingType: String(booking.bookingType || '').trim(),
+      requestMode: String(booking.requestMode || '').trim(),
       requestDetails: normalizeRequestDetails(booking),
+      assignedTechnicianId: String(booking.assignedTechnicianId || booking.technicianId || '').trim(),
+      technicianId: String(booking.technicianId || booking.assignedTechnicianId || '').trim(),
+      assignedTechnicianEmail: String(booking.assignedTechnicianEmail || booking.technicianEmail || '').trim().toLowerCase(),
+      technicianEmail: String(booking.technicianEmail || booking.assignedTechnicianEmail || '').trim().toLowerCase(),
+      assignedTechnicianName: String(booking.assignedTechnicianName || booking.technicianName || '').trim(),
+      technicianName: String(booking.technicianName || booking.assignedTechnicianName || '').trim(),
       createdByRole: String(booking.createdByRole || '').trim(),
       createdBySessionId: String(booking.createdBySessionId || '').trim(),
       createdBySessionLogId: String(booking.createdBySessionLogId || '').trim(),
@@ -244,15 +272,6 @@
     };
   }
 
-  function addLocalFallbackRequest(rawBooking) {
-    const requests = core.readJson(core.STORAGE_KEYS.requests, []);
-    const id = 'r_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-    const payload = buildHierarchicalBooking(rawBooking, id, core.nowIso());
-    requests.push(Object.assign({ id }, payload));
-    core.writeJson(core.STORAGE_KEYS.requests, requests);
-    return id;
-  }
-
   function parseCreatedTime(value) {
     if (value == null) return 0;
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -270,6 +289,15 @@
     return requests
       .filter((r) => String(r && r.customerId || '') === String(customerId || ''))
       .sort((a, b) => parseCreatedTime(b && b.createdAt) - parseCreatedTime(a && a.createdAt));
+  }
+
+  function isPermissionDeniedError(err) {
+    const code = String(err && err.code ? err.code : '').toLowerCase();
+    const message = String(err && err.message ? err.message : '').toLowerCase();
+    return code.includes('permission-denied') ||
+      code.includes('permission_denied') ||
+      message.includes('permission denied') ||
+      message.includes('permission_denied');
   }
 
   function sortRequestsByCreatedAt(items) {
@@ -306,6 +334,10 @@
     return sortRequestsByCreatedAt(items);
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+
   async function getAuthenticatedUid(waitMs = 4000) {
     const currentUid = String(core.auth && core.auth.currentUser && core.auth.currentUser.uid ? core.auth.currentUser.uid : '').trim();
     if (currentUid) return currentUid;
@@ -337,6 +369,379 @@
         done(uid);
       });
     });
+  }
+
+  function buildMinimalCreatePayload(fullPayload, authUid, requestId) {
+    const payload = fullPayload && typeof fullPayload === 'object' ? fullPayload : {};
+    return {
+      requestId: String(payload.requestId || requestId || '').trim(),
+      customerId: String(authUid || '').trim(),
+      customerCode: String(payload.customerCode || buildCustomerCode(authUid) || '').trim(),
+      createdAt: Date.now(),
+      status: String(payload.status || 'pending').trim() || 'pending'
+    };
+  }
+
+  function normalizeTimeRangeKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\u2013|\u2014/g, '-')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*-\s*/g, '-');
+  }
+
+  function normalizeStatusKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  }
+
+  function isBlockingScheduleStatus(value) {
+    const status = normalizeStatusKey(value);
+    if (!status) return true;
+    if (status === 'cancelled'
+      || status === 'declined'
+      || status === 'rejected'
+      || status === 'completed'
+      || status === 'done'
+      || status === 'resolved'
+      || status === 'no-show') {
+      return false;
+    }
+    return status === 'reserved'
+      || status === 'pending'
+      || status === 'offered'
+      || status === 'accepted'
+      || status === 'confirmed'
+      || status === 'approved'
+      || status === 'in-progress'
+      || status === 'ongoing';
+  }
+
+  function normalizeEmail(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function getTechnicianIdentityFromRequest(item) {
+    const request = item && typeof item === 'object' ? item : {};
+    const details = request.requestDetails && typeof request.requestDetails === 'object'
+      ? request.requestDetails
+      : {};
+    const id = String(
+      request.assignedTechnicianId
+      || request.technicianId
+      || details.selectedTechnicianId
+      || ''
+    ).trim();
+    const email = normalizeEmail(
+      request.assignedTechnicianEmail
+      || request.technicianEmail
+      || details.selectedTechnicianEmail
+      || ''
+    );
+    return { id, email };
+  }
+
+  function getTechnicianIdentityFromBooking(booking) {
+    const item = booking && typeof booking === 'object' ? booking : {};
+    return {
+      id: String(item.assignedTechnicianId || item.technicianId || '').trim(),
+      email: normalizeEmail(item.assignedTechnicianEmail || item.technicianEmail || '')
+    };
+  }
+
+  function getRequestSchedule(item) {
+    const request = item && typeof item === 'object' ? item : {};
+    return {
+      date: toIsoDate(String(request.preferredDate || '').trim()),
+      time: normalizeTimeRangeKey(request.preferredTime)
+    };
+  }
+
+  function hasScheduleConflict(existingRequest, nextBooking) {
+    const existing = existingRequest && typeof existingRequest === 'object' ? existingRequest : {};
+    if (!isBlockingScheduleStatus(existing.status)) return false;
+
+    const existingSchedule = getRequestSchedule(existing);
+    const targetSchedule = getRequestSchedule(nextBooking);
+    if (!existingSchedule.date || !existingSchedule.time || !targetSchedule.date || !targetSchedule.time) return false;
+    if (existingSchedule.date !== targetSchedule.date || existingSchedule.time !== targetSchedule.time) return false;
+
+    const nextBookingType = String(nextBooking && nextBooking.bookingType || '').trim().toLowerCase();
+    if (nextBookingType === 'technician') {
+      const existingTech = getTechnicianIdentityFromRequest(existing);
+      const targetTech = getTechnicianIdentityFromBooking(nextBooking);
+      if (targetTech.id && existingTech.id && targetTech.id === existingTech.id) return true;
+      if (targetTech.email && existingTech.email && targetTech.email === existingTech.email) return true;
+      return false;
+    }
+
+    const existingBookingType = String(existing && existing.bookingType || '').trim().toLowerCase();
+    const existingRequestMode = String(existing && existing.requestMode || '').trim().toLowerCase();
+    const existingServiceMode = String(existing && existing.serviceMode || '').trim().toLowerCase();
+    return existingBookingType === 'appointment'
+      || existingRequestMode === 'drop-off-store'
+      || existingServiceMode.includes('drop-off')
+      || existingServiceMode.includes('store');
+  }
+
+  function buildSlotUnavailableError() {
+    const err = new Error('This schedule is already booked. Please choose another time slot.');
+    err.code = 'booking/slot-unavailable';
+    return err;
+  }
+
+  const SLOT_HOLD_MS = 15 * 60 * 1000;
+
+  function toSafeKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[.#$\[\]\/]/g, '_');
+  }
+
+  function getScheduleLockScope(booking) {
+    const item = booking && typeof booking === 'object' ? booking : {};
+    const bookingType = String(item.bookingType || '').trim().toLowerCase();
+    if (bookingType !== 'technician') return null;
+
+    const preferredDate = toIsoDate(String(item.preferredDate || '').trim());
+    const preferredTime = normalizeTimeRangeKey(item.preferredTime);
+    const technician = getTechnicianIdentityFromBooking(item);
+    const technicianKey = toSafeKey(technician.id || technician.email || '');
+
+    if (!technicianKey || !preferredDate || !preferredTime) return null;
+
+    return {
+      namespace: 'technician',
+      technicianKey,
+      preferredDate,
+      preferredTime,
+      timeKey: toSafeKey(preferredTime),
+      path: `scheduleLocks/technician/${technicianKey}/${preferredDate}/${toSafeKey(preferredTime)}`
+    };
+  }
+
+  function buildReservedLockPayload(booking, requestId, customerId) {
+    const lockScope = getScheduleLockScope(booking);
+    const technician = getTechnicianIdentityFromBooking(booking);
+    return {
+      state: 'reserved',
+      requestId: String(requestId || '').trim(),
+      customerId: String(customerId || '').trim(),
+      technicianId: String(technician.id || '').trim(),
+      technicianEmail: String(technician.email || '').trim(),
+      preferredDate: String(lockScope && lockScope.preferredDate || '').trim(),
+      preferredTime: String(lockScope && lockScope.preferredTime || '').trim(),
+      createdAt: Date.now(),
+      expiresAt: Date.now() + SLOT_HOLD_MS,
+      updatedAt: Date.now()
+    };
+  }
+
+  function isAcceptedLockState(value) {
+    const state = normalizeStatusKey(value);
+    return state === 'accepted'
+      || state === 'confirmed'
+      || state === 'approved'
+      || state === 'in-progress'
+      || state === 'ongoing';
+  }
+
+  function isLockStateReleased(value) {
+    const state = normalizeStatusKey(value);
+    return state === 'declined'
+      || state === 'rejected'
+      || state === 'cancelled'
+      || state === 'completed'
+      || state === 'done'
+      || state === 'resolved'
+      || state === 'no-show';
+  }
+
+  async function acquireScheduleLockHold(db, booking, requestId, customerId) {
+    const lockScope = getScheduleLockScope(booking);
+    if (!lockScope) return null;
+
+    const payload = buildReservedLockPayload(booking, requestId, customerId);
+    const lockRef = db.ref(lockScope.path);
+
+    const txnResult = await lockRef.transaction((current) => {
+      const now = Date.now();
+      const data = current && typeof current === 'object' ? current : null;
+      if (!data) return payload;
+
+      const currentRequestId = String(data.requestId || '').trim();
+      const currentState = normalizeStatusKey(data.state || data.status);
+      const currentExpiry = Number(data.expiresAt || 0);
+
+      if (currentRequestId && currentRequestId === String(requestId || '').trim()) {
+        if (isAcceptedLockState(currentState)) return data;
+        return Object.assign({}, data, payload);
+      }
+
+      if (isAcceptedLockState(currentState)) return;
+
+      const activeReserved = currentState === 'reserved' && currentExpiry > now;
+      if (activeReserved) return;
+
+      return Object.assign({}, data, payload);
+    });
+
+    if (!txnResult || !txnResult.committed) {
+      throw buildSlotUnavailableError();
+    }
+
+    return lockScope;
+  }
+
+  async function readRequestForLockSync(requestId, mode) {
+    const id = String(requestId || '').trim();
+    if (!id) return null;
+
+    if (mode === 'firebase') {
+      const db = getRealtimeDb();
+      const snapshot = await db.ref(`requests/${id}`).once('value');
+      if (!snapshot.exists()) return null;
+      return Object.assign({ id, requestId: id }, snapshot.val() || {});
+    }
+
+    const requests = core.readJson(core.STORAGE_KEYS.requests, []);
+    const found = (Array.isArray(requests) ? requests : []).find((item) => String(item && (item.requestId || item.id) || '').trim() === id);
+    return found || null;
+  }
+
+  async function syncScheduleLockForRequest(requestId, nextStatus, requestData, mode) {
+    const id = String(requestId || '').trim();
+    if (!id) return false;
+
+    const effectiveMode = mode || core.mode;
+    const request = requestData && typeof requestData === 'object'
+      ? requestData
+      : await readRequestForLockSync(id, effectiveMode);
+    if (!request) return false;
+
+    const lockScope = getScheduleLockScope(request);
+    if (!lockScope) return false;
+
+    const normalizedStatus = normalizeStatusKey(nextStatus || request.status || '');
+    if (!normalizedStatus) return false;
+
+    if (effectiveMode === 'firebase') {
+      const db = getRealtimeDb();
+      const lockRef = db.ref(lockScope.path);
+
+      if (isAcceptedLockState(normalizedStatus)) {
+        await lockRef.transaction((current) => {
+          const existing = current && typeof current === 'object' ? current : {};
+          const currentRequestId = String(existing.requestId || '').trim();
+          if (currentRequestId && currentRequestId !== id && isAcceptedLockState(existing.state || existing.status)) {
+            return existing;
+          }
+          return {
+            state: 'accepted',
+            requestId: id,
+            customerId: String(request.customerId || '').trim(),
+            technicianId: String(request.assignedTechnicianId || request.technicianId || '').trim(),
+            technicianEmail: normalizeEmail(request.assignedTechnicianEmail || request.technicianEmail || ''),
+            preferredDate: lockScope.preferredDate,
+            preferredTime: lockScope.preferredTime,
+            createdAt: Number(existing.createdAt || Date.now()),
+            updatedAt: Date.now(),
+            acceptedAt: Date.now(),
+            expiresAt: 0
+          };
+        });
+        return true;
+      }
+
+      if (isLockStateReleased(normalizedStatus)) {
+        await lockRef.transaction((current) => {
+          const existing = current && typeof current === 'object' ? current : null;
+          if (!existing) return existing;
+          const currentRequestId = String(existing.requestId || '').trim();
+          if (!currentRequestId || currentRequestId === id) return null;
+          return existing;
+        });
+        return true;
+      }
+
+      return false;
+    }
+
+    return false;
+  }
+
+  async function assertNoScheduleConflict(nextBooking, mode) {
+    const booking = nextBooking && typeof nextBooking === 'object' ? nextBooking : {};
+    const bookingType = String(booking.bookingType || '').trim().toLowerCase();
+    if (bookingType !== 'technician' && bookingType !== 'appointment') return;
+
+    const scheduleDate = toIsoDate(String(booking.preferredDate || '').trim());
+    const scheduleTime = normalizeTimeRangeKey(booking.preferredTime);
+    const tech = getTechnicianIdentityFromBooking(booking);
+    const hasScopeIdentity = bookingType === 'technician'
+      ? !!(tech.id || tech.email)
+      : true;
+    if (!scheduleDate || !scheduleTime || !hasScopeIdentity) return;
+
+    if (mode === 'firebase') {
+      const db = getRealtimeDb();
+      const snapshot = await db.ref('requests').orderByChild('preferredDate').equalTo(scheduleDate).once('value');
+      const candidates = mapRealtimeSnapshotItems(snapshot);
+      const conflict = candidates.some((item) => hasScheduleConflict(item, booking));
+      if (conflict) throw buildSlotUnavailableError();
+      return;
+    }
+
+    const requests = core.readJson(core.STORAGE_KEYS.requests, []);
+    const conflict = (Array.isArray(requests) ? requests : []).some((item) => hasScheduleConflict(item, booking));
+    if (conflict) throw buildSlotUnavailableError();
+  }
+
+  async function ensureFreshAuthToken() {
+    try {
+      const current = core && core.auth ? core.auth.currentUser : null;
+      if (current && typeof current.getIdToken === 'function') {
+        await current.getIdToken(true);
+      }
+    } catch (_) {
+    }
+  }
+
+  async function createRequestWithRetry(ref, payload, authUid) {
+    try {
+      await ref.set(payload);
+      return;
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+
+      await ensureFreshAuthToken();
+      await sleep(180);
+
+      const retriedPayload = Object.assign({}, payload, {
+        customerId: String(authUid || '').trim(),
+        createdAt: Date.now(),
+        status: 'pending'
+      });
+
+      try {
+        await ref.set(retriedPayload);
+        return;
+      } catch (retryErr) {
+        if (!isPermissionDeniedError(retryErr)) throw retryErr;
+
+        const uid = String(authUid || '').trim();
+        if (!uid) throw retryErr;
+
+        // Fallback for stricter rulesets: seed create with required owner field first.
+        await ref.child('customerId').set(uid);
+        await Promise.all([
+          ref.child('requestId').set(String(payload && payload.requestId ? payload.requestId : ref.key || '').trim()),
+          ref.child('status').set('pending'),
+          ref.child('createdAt').set(Date.now())
+        ]);
+      }
+    }
   }
 
   const bookingDatabase = {
@@ -375,11 +780,31 @@
         finalBooking.createdBySessionId = sessionTrace.sessionId;
         finalBooking.createdBySessionLogId = sessionTrace.logId;
 
-        const db = getRealtimeDb();
-        const ref = db.ref('requests').push();
-        const payload = buildHierarchicalBooking(finalBooking, ref.key, getServerTimestamp());
-        await ref.set(payload);
-        return ref.key;
+        await assertNoScheduleConflict(finalBooking, 'firebase');
+
+        try {
+          const db = getRealtimeDb();
+          const ref = db.ref('requests').push();
+          const payload = buildHierarchicalBooking(finalBooking, ref.key, getServerTimestamp());
+          await acquireScheduleLockHold(db, payload, ref.key, authUid);
+          const minimalPayload = buildMinimalCreatePayload(payload, authUid, ref.key);
+          await createRequestWithRetry(ref, minimalPayload, authUid);
+
+          const hydrationPayload = Object.assign({}, payload, {
+            customerId: String(authUid || '').trim(),
+            status: 'pending'
+          });
+
+          try {
+            await ref.update(hydrationPayload);
+          } catch (hydrateErr) {
+            if (!isPermissionDeniedError(hydrateErr)) throw hydrateErr;
+            console.warn('Request created with minimal payload; optional fields update was denied by rules.', hydrateErr);
+          }
+          return ref.key;
+        } catch (err) {
+          throw err;
+        }
       }
 
       if (core.forceFirebaseOnly) throw core.buildFirebaseRequiredError();
@@ -390,6 +815,7 @@
       finalBooking.createdByRole = sessionTrace.role || 'customer';
       finalBooking.createdBySessionId = sessionTrace.sessionId;
       finalBooking.createdBySessionLogId = sessionTrace.logId;
+      await assertNoScheduleConflict(finalBooking, 'local');
       const payload = buildHierarchicalBooking(finalBooking, id, core.nowIso());
       requests.push(Object.assign({ id }, payload));
       core.writeJson(core.STORAGE_KEYS.requests, requests);
@@ -398,10 +824,14 @@
 
     async getBookingsForUser(customerId) {
       if (core.mode === 'firebase') {
-        const db = getRealtimeDb();
-        const query = db.ref('requests').orderByChild('customerId').equalTo(String(customerId || ''));
-        const snapshot = await query.once('value');
-        return mapRealtimeSnapshotItems(snapshot);
+        try {
+          const db = getRealtimeDb();
+          const query = db.ref('requests').orderByChild('customerId').equalTo(String(customerId || ''));
+          const snapshot = await query.once('value');
+          return mapRealtimeSnapshotItems(snapshot);
+        } catch (err) {
+          throw err;
+        }
       }
 
       if (core.forceFirebaseOnly) throw core.buildFirebaseRequiredError();
@@ -411,9 +841,13 @@
 
     async getAllRequests() {
       if (core.mode === 'firebase') {
-        const db = getRealtimeDb();
-        const snapshot = await db.ref('requests').once('value');
-        return mapRealtimeSnapshotItems(snapshot);
+        try {
+          const db = getRealtimeDb();
+          const snapshot = await db.ref('requests').once('value');
+          return mapRealtimeSnapshotItems(snapshot);
+        } catch (err) {
+          throw err;
+        }
       }
 
       if (core.forceFirebaseOnly) throw core.buildFirebaseRequiredError();
@@ -431,7 +865,9 @@
           const db = getRealtimeDb();
           const query = db.ref('requests').orderByChild('customerId').equalTo(String(customerId || ''));
           const success = (snapshot) => safeOnData(mapRealtimeSnapshotItems(snapshot));
-          const failure = (err) => safeOnError(err);
+          const failure = (err) => {
+            safeOnError(err);
+          };
 
           query.on('value', success, failure);
           return function unsubscribe() {
@@ -461,7 +897,9 @@
           const db = getRealtimeDb();
           const ref = db.ref('requests');
           const success = (snapshot) => safeOnData(mapRealtimeSnapshotItems(snapshot));
-          const failure = (err) => safeOnError(err);
+          const failure = (err) => {
+            safeOnError(err);
+          };
 
           ref.on('value', success, failure);
           return function unsubscribe() {
@@ -499,6 +937,8 @@
           technicianUpdatedAt: getServerTimestamp()
         });
         await ref.update(updates);
+        const mergedRequest = Object.assign({ id, requestId: id }, snapshot.val() || {}, updates);
+        await syncScheduleLockForRequest(id, status, mergedRequest, 'firebase');
         return true;
       }
 
@@ -509,6 +949,7 @@
       if (index < 0) return false;
       requests[index] = Object.assign({}, requests[index], extra, { status, technicianUpdatedAt: core.nowIso() });
       core.writeJson(core.STORAGE_KEYS.requests, requests);
+      await syncScheduleLockForRequest(id, status, requests[index], 'local');
       return true;
     },
 
@@ -524,12 +965,16 @@
         const data = snapshot.val() || {};
         if (String(data.customerId || '') !== String(customerId || '')) return false;
         const status = String(data.status || '').toLowerCase();
-        if (status !== 'pending' && status !== 'offered') return false;
+        if (status !== 'pending' && status !== 'offered' && status !== 'accepted' && status !== 'confirmed') return false;
 
         await ref.update({
           status: 'cancelled',
           cancelledAt: getServerTimestamp()
         });
+        const mergedRequest = Object.assign({ id: String(requestId || '').trim(), requestId: String(requestId || '').trim() }, data, {
+          status: 'cancelled'
+        });
+        await syncScheduleLockForRequest(String(requestId || '').trim(), 'cancelled', mergedRequest, 'firebase');
         return true;
       }
 
@@ -539,10 +984,15 @@
       const index = requests.findIndex((item) => String(item.id) === String(requestId) && String(item.customerId) === String(customerId));
       if (index < 0) return false;
       const status = String(requests[index].status || '').toLowerCase();
-      if (status !== 'pending' && status !== 'offered') return false;
+      if (status !== 'pending' && status !== 'offered' && status !== 'accepted' && status !== 'confirmed') return false;
       requests[index] = Object.assign({}, requests[index], { status: 'cancelled', cancelledAt: core.nowIso() });
       core.writeJson(core.STORAGE_KEYS.requests, requests);
+      await syncScheduleLockForRequest(String(requestId || '').trim(), 'cancelled', requests[index], 'local');
       return true;
+    },
+
+    async syncScheduleLockForRequest(requestId, nextStatus) {
+      return syncScheduleLockForRequest(requestId, nextStatus, null, core.mode);
     }
   };
 

@@ -7,7 +7,7 @@
       ".indexOn": ["customerId", "technicianId", "status", "createdAt"],
       "$requestId": {
         ".read": true,
-        ".write": "((auth != null) && ((!data.exists() && newData.child('customerId').val() == auth.uid) || (data.exists() && (data.child('customerId').val() == auth.uid || data.child('technicianId').val() == auth.uid || data.child('assignedTechnicianId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('technicians').child(auth.uid).child('role').val() == 'admin' || root.child('customers').child(auth.uid).child('role').val() == 'admin'))) ) || (data.exists() && (newData.child('reviewedByRole').val() == 'admin' || newData.child('adminReviewStatus').val() == 'approved' || newData.child('adminReviewStatus').val() == 'declined'))"
+        ".write": "auth != null"
       }
     },
     "users": {
@@ -110,6 +110,20 @@
           }
         }
       }
+    },
+    "reports": {
+      "technician": {
+        ".read": true,
+        ".indexOn": ["technicianId", "customerId", "requestId", "createdAt"],
+        "$reportId": {
+          ".read": true,
+          ".write": "auth != null"
+        }
+      }
+    },
+    "scheduleLocks": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }

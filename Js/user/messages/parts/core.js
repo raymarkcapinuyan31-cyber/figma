@@ -13,8 +13,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const messagesAttachmentInput = document.getElementById('messagesAttachmentInput');
   const messagesInput = document.getElementById('messagesInput');
   const messagesSendBtn = document.getElementById('messagesSendBtn');
+  const messagesReportBtn = document.getElementById('messagesReportBtn');
+  const reportModal = document.getElementById('reportModal');
+  const reportModalCloseBtn = document.getElementById('reportModalCloseBtn');
+  const reportForm = document.getElementById('reportForm');
+  const reportReasonSelect = document.getElementById('reportReasonSelect');
+  const reportReasonOtherLabel = document.getElementById('reportReasonOtherLabel');
+  const reportReasonOther = document.getElementById('reportReasonOther');
+  const reportExplanation = document.getElementById('reportExplanation');
+  const reportFormError = document.getElementById('reportFormError');
+  const reportCancelBtn = document.getElementById('reportCancelBtn');
+  const reportSubmitBtn = document.getElementById('reportSubmitBtn');
+  const reportSuccessModal = document.getElementById('reportSuccessModal');
+  const reportSuccessOkBtn = document.getElementById('reportSuccessOkBtn');
+  const reportConfirmModal = document.getElementById('reportConfirmModal');
+  const reportConfirmCancelBtn = document.getElementById('reportConfirmCancelBtn');
+  const reportConfirmOkBtn = document.getElementById('reportConfirmOkBtn');
 
-  if (!usersDb || !usersDb.auth || !threadList || !mainEmpty || !conversation || !requestTitle || !requestMeta || !assignedTech || !messagesList || !messagesQuickReplies || !messagesForm || !messagesAttachBtn || !messagesAttachmentInput || !messagesInput || !messagesSendBtn) {
+  if (!usersDb || !usersDb.auth || !threadList || !mainEmpty || !conversation || !requestTitle || !requestMeta || !assignedTech || !messagesList || !messagesQuickReplies || !messagesForm || !messagesAttachBtn || !messagesAttachmentInput || !messagesInput || !messagesSendBtn || !messagesReportBtn || !reportModal || !reportModalCloseBtn || !reportForm || !reportReasonSelect || !reportReasonOtherLabel || !reportReasonOther || !reportExplanation || !reportFormError || !reportCancelBtn || !reportSubmitBtn || !reportSuccessModal || !reportSuccessOkBtn || !reportConfirmModal || !reportConfirmCancelBtn || !reportConfirmOkBtn) {
     return;
   }
 
@@ -26,6 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let unsubscribeOwnPresence = null;
   let unsubscribePeerPresence = null;
   let activePeerPresenceUid = '';
+  let activeCustomerDisplayName = '';
+  let pendingReportSubmission = null;
   let sendMessageForActiveThread = null;
   const technicianNameByRequestId = Object.create(null);
   const technicianNameByUid = Object.create(null);
@@ -145,6 +163,59 @@ document.addEventListener('DOMContentLoaded', () => {
     const uid = normalizeText(item && (item.assignedTechnicianId || item.technicianId || item.assignedToUid || item.assignedTo));
     const email = normalizeText(item && (item.assignedTechnicianEmail || item.technicianEmail || item.assignedToEmail)).toLowerCase();
     return { uid, email };
+  }
+
+  function getAssignedTechnicianEmail(item) {
+    return normalizeText(item && (item.assignedTechnicianEmail || item.technicianEmail || item.assignedToEmail)).toLowerCase();
+  }
+
+  function buildPersonFullName(profile) {
+    if (!profile || typeof profile !== 'object') return '';
+    const firstName = normalizeText(profile.first_name || profile.firstName);
+    const lastName = normalizeText(profile.last_name || profile.lastName);
+    return `${firstName} ${lastName}`.trim();
+  }
+
+  function getCustomerDisplayNameFromItem(item) {
+    const firstName = normalizeText(item && (item.customerFirstName || item.first_name || (item.customer && (item.customer.first_name || item.customer.firstName))));
+    const lastName = normalizeText(item && (item.customerLastName || item.last_name || (item.customer && (item.customer.last_name || item.customer.lastName))));
+    const combined = `${firstName} ${lastName}`.trim();
+    if (combined) return combined;
+
+    const fallback = normalizeText(item && item.customerName);
+    if (fallback && !looksLikeEmail(fallback)) return fallback;
+    return '';
+  }
+
+  async function resolveActiveCustomerDisplayName(user) {
+    const uid = normalizeText(user && user.uid);
+    if (!uid) {
+      activeCustomerDisplayName = '';
+      return;
+    }
+
+    const fallbackEmail = normalizeText(user && user.email);
+    let resolvedName = '';
+
+    try {
+      let profile = null;
+      if (typeof usersDb.getUserById === 'function') {
+        profile = await usersDb.getUserById(uid);
+      }
+      if (!profile && fallbackEmail && typeof usersDb.getUserByEmail === 'function') {
+        profile = await usersDb.getUserByEmail(fallbackEmail);
+      }
+      resolvedName = buildPersonFullName(profile);
+    } catch (_) {
+      resolvedName = '';
+    }
+
+    if (!resolvedName && fallbackEmail) {
+      const fromEmail = getFirstName(fallbackEmail);
+      resolvedName = fromEmail || '';
+    }
+
+    activeCustomerDisplayName = normalizeText(resolvedName);
   }
 
   function getTechnicianNameFromRecord(record) {
@@ -397,10 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateAssignedTechnicianLine(item, requestId) {
     const techLabel = getTechnicianLabel(item, requestId);
-    const uid = getAssignedTechnicianUid(item);
-    const presence = uid ? presenceByUid[uid] : null;
-    const statusText = getPresenceLabel(presence);
-    assignedTech.textContent = `Assigned Technician: ${techLabel}${statusText ? ` • ${statusText}` : ''}`;
+    assignedTech.textContent = `Assigned Technician: ${techLabel}`;
   }
 
   function bindPeerPresence(item, requestId) {
@@ -470,6 +538,127 @@ document.addEventListener('DOMContentLoaded', () => {
   function setConversationVisible(visible) {
     mainEmpty.hidden = !!visible;
     conversation.hidden = !visible;
+    if (!visible) {
+      messagesReportBtn.disabled = true;
+    }
+  }
+
+  function getActiveThreadItem() {
+    const selectedId = normalizeText(activeMessageRequestId);
+    if (!selectedId) return null;
+    return (Array.isArray(activeItems) ? activeItems : []).find((item) => normalizeText(item && item.id) === selectedId) || null;
+  }
+
+  function setReportFormError(message) {
+    reportFormError.textContent = normalizeText(message);
+  }
+
+  function setReportOtherReasonVisibility() {
+    const isOther = normalizeText(reportReasonSelect.value).toLowerCase() === 'others';
+    reportReasonOther.hidden = !isOther;
+    reportReasonOtherLabel.hidden = !isOther;
+    if (!isOther) reportReasonOther.value = '';
+  }
+
+  function resetReportForm() {
+    reportForm.reset();
+    setReportOtherReasonVisibility();
+    setReportFormError('');
+  }
+
+  function closeReportModal() {
+    reportModal.hidden = true;
+    reportSubmitBtn.disabled = false;
+  }
+
+  function openReportModal() {
+    resetReportForm();
+    reportModal.hidden = false;
+    setTimeout(() => {
+      if (reportReasonSelect && typeof reportReasonSelect.focus === 'function') reportReasonSelect.focus();
+    }, 0);
+  }
+
+  function closeReportSuccessModal() {
+    reportSuccessModal.hidden = true;
+  }
+
+  function openReportSuccessModal() {
+    reportSuccessModal.hidden = false;
+  }
+
+  function closeReportConfirmModal() {
+    reportConfirmModal.hidden = true;
+    pendingReportSubmission = null;
+  }
+
+  function openReportConfirmModal(reason, explanation) {
+    pendingReportSubmission = {
+      reason: normalizeText(reason),
+      explanation: normalizeText(explanation)
+    };
+    reportConfirmModal.hidden = false;
+  }
+
+  function getReportReasonValue() {
+    const selectedReason = normalizeText(reportReasonSelect.value);
+    if (selectedReason.toLowerCase() !== 'others') return selectedReason;
+    return normalizeText(reportReasonOther.value);
+  }
+
+  async function submitTechnicianReport(reasonValue, explanationValue) {
+    const item = getActiveThreadItem();
+    const requestId = normalizeText(item && item.id);
+    if (!item || !requestId || !activeUser || !activeUser.uid) {
+      setReportFormError('Select a request thread first.');
+      return;
+    }
+
+    const technicianId = getAssignedTechnicianUid(item);
+    if (!technicianId) {
+      setReportFormError('Unable to report because technician ID is missing on this request.');
+      return;
+    }
+
+    const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
+      ? usersDb.firebase.database()
+      : null;
+    if (!rtdb) {
+      setReportFormError('Realtime Database is unavailable.');
+      return;
+    }
+
+    messagesReportBtn.disabled = true;
+    reportSubmitBtn.disabled = true;
+    setReportFormError('');
+    try {
+      const payload = {
+        requestId,
+        requestCode: getBookingCode(item),
+        requestStatus: normalizeText(item && item.status),
+        customerId: normalizeText(activeUser.uid),
+        customerEmail: normalizeText(activeUser.email).toLowerCase(),
+        customerName: activeCustomerDisplayName || getCustomerDisplayNameFromItem(item) || 'Customer',
+        technicianId,
+        technicianEmail: getAssignedTechnicianEmail(item),
+        technicianName: getTechnicianLabel(item, requestId),
+        reason: normalizeText(reasonValue),
+        details: normalizeText(explanationValue),
+        source: 'customer-messages',
+        createdAt: Date.now()
+      };
+
+      await rtdb.ref('reports/technician').push(payload);
+      closeReportModal();
+      openReportSuccessModal();
+    } catch (_) {
+      setReportFormError('Failed to submit report. Please try again.');
+    } finally {
+      if (!conversation.hidden) {
+        messagesReportBtn.disabled = false;
+      }
+      reportSubmitBtn.disabled = false;
+    }
   }
 
   function renderQuickReplies() {
@@ -557,6 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
       messagesInput.disabled = true;
       messagesSendBtn.disabled = true;
       messagesAttachBtn.disabled = true;
+      messagesReportBtn.disabled = true;
       setQuickRepliesDisabled(true);
       messagesList.innerHTML = '<div class="messages-empty">Realtime chat is unavailable.</div>';
       return;
@@ -565,9 +755,32 @@ document.addEventListener('DOMContentLoaded', () => {
     messagesInput.disabled = false;
     messagesSendBtn.disabled = false;
     messagesAttachBtn.disabled = false;
+    messagesReportBtn.disabled = false;
     setQuickRepliesDisabled(false);
 
+    const canStillUseChat = () => {
+      const latest = (Array.isArray(activeItems) ? activeItems : []).find((entry) => {
+        return normalizeText(entry && entry.id) === requestId;
+      }) || item || {};
+      return isChatStatusEligible(latest) && hasAssignedTechnician(latest);
+    };
+
+    const lockClosedChat = () => {
+      messagesInput.disabled = true;
+      messagesSendBtn.disabled = true;
+      messagesAttachBtn.disabled = true;
+      messagesReportBtn.disabled = true;
+      setQuickRepliesDisabled(true);
+      messagesList.innerHTML = '<div class="messages-empty">Chat is now closed for this request.</div>';
+    };
+
     const sendMessage = async (payload) => {
+      if (!canStillUseChat()) {
+        lockClosedChat();
+        renderPage();
+        return;
+      }
+
       const rawText = payload && typeof payload === 'object' ? payload.text : payload;
       const text = normalizeText(rawText);
       const attachment = payload && typeof payload === 'object' ? payload.attachment : null;
@@ -583,7 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
           text: text || (isVideoMediaType(attachment && attachment.mediaType) ? 'Sent a video' : 'Sent a photo'),
           senderUid: String(activeUser.uid || ''),
           senderRole: 'customer',
-          senderName: normalizeText(activeUser.email) || 'Customer',
+          senderName: activeCustomerDisplayName || getCustomerDisplayNameFromItem(item) || normalizeText(activeUser.email) || 'Customer',
           createdAt: Date.now()
         };
 
@@ -601,9 +814,14 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (_) {
         messagesList.innerHTML = '<div class="messages-empty">Failed to send message. Please try again.</div>';
       } finally {
-        messagesSendBtn.disabled = false;
-        messagesAttachBtn.disabled = false;
-        setQuickRepliesDisabled(false);
+        if (canStillUseChat()) {
+          messagesSendBtn.disabled = false;
+          messagesAttachBtn.disabled = false;
+          setQuickRepliesDisabled(false);
+        } else {
+          lockClosedChat();
+          renderPage();
+        }
       }
     };
 
@@ -694,6 +912,80 @@ document.addEventListener('DOMContentLoaded', () => {
     messagesAttachmentInput.click();
   });
 
+  messagesReportBtn.addEventListener('click', async () => {
+    if (messagesReportBtn.disabled) return;
+    const item = getActiveThreadItem();
+    if (!item) {
+      window.alert('Select a request thread first.');
+      return;
+    }
+    openReportModal();
+  });
+
+  reportReasonSelect.addEventListener('change', () => {
+    setReportOtherReasonVisibility();
+    setReportFormError('');
+  });
+
+  reportModalCloseBtn.addEventListener('click', () => {
+    closeReportModal();
+  });
+
+  reportCancelBtn.addEventListener('click', () => {
+    closeReportModal();
+  });
+
+  reportModal.addEventListener('click', (event) => {
+    if (event.target === reportModal) closeReportModal();
+  });
+
+  reportForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const reason = getReportReasonValue();
+    const explanation = normalizeText(reportExplanation.value);
+
+    if (!reason) {
+      setReportFormError('Please select a reason.');
+      return;
+    }
+
+    if (!explanation) {
+      setReportFormError('Please add an explanation.');
+      return;
+    }
+
+    openReportConfirmModal(reason, explanation);
+  });
+
+  reportConfirmCancelBtn.addEventListener('click', () => {
+    closeReportConfirmModal();
+  });
+
+  reportConfirmOkBtn.addEventListener('click', async () => {
+    if (!pendingReportSubmission) {
+      closeReportConfirmModal();
+      return;
+    }
+
+    const payload = pendingReportSubmission;
+    reportConfirmModal.hidden = true;
+    pendingReportSubmission = null;
+    await submitTechnicianReport(payload.reason, payload.explanation);
+  });
+
+  reportConfirmModal.addEventListener('click', (event) => {
+    if (event.target === reportConfirmModal) closeReportConfirmModal();
+  });
+
+  reportSuccessOkBtn.addEventListener('click', () => {
+    closeReportSuccessModal();
+  });
+
+  reportSuccessModal.addEventListener('click', (event) => {
+    if (event.target === reportSuccessModal) closeReportSuccessModal();
+  });
+
   messagesAttachmentInput.addEventListener('change', async () => {
     const file = messagesAttachmentInput.files && messagesAttachmentInput.files[0] ? messagesAttachmentInput.files[0] : null;
     messagesAttachmentInput.value = '';
@@ -742,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     activeUser = user;
+    await resolveActiveCustomerDisplayName(user);
     startOwnPresenceTracking();
 
     if (typeof usersDb.subscribeBookingsForUser === 'function') {

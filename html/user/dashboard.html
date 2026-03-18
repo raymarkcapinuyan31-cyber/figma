@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>User €” HomeFixSolution</title>
-  <link rel="stylesheet" href="../../css/user/layout/dashboard.css?v=20260304a">
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css?v=20260315a">
    <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
 <body class="dashboard-home-page">
@@ -47,56 +47,62 @@
 
       <main class="content">
         <section class="home-card dashboard-overview">
-          <div class="overview-welcome">
-            <div>
-              <h1 id="overviewWelcomeHeading">Welcome User!</h1>
-            </div>
-            <div class="overview-user">
-              <div class="overview-avatar" id="overviewAvatar">U</div>
-              <div class="overview-user-meta">
-                <strong id="overviewUserName">User</strong>
-                <span id="overviewUserEmail">Loading profile...</span>
+          <div class="overview-hero">
+            <div class="overview-welcome">
+              <div class="overview-copy">
+                <h1 id="overviewWelcomeHeading">Welcome User!</h1>
               </div>
+              <div class="overview-user">
+                <div class="overview-avatar" id="overviewAvatar">U</div>
+                <div class="overview-user-meta">
+                  <strong id="overviewUserName">User</strong>
+                  <span id="overviewUserEmail">Loading profile...</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-stats">
+              <article class="stat-card stat-card-link stat-card-total" data-target-tab="history" role="link" tabindex="0" aria-label="Open service request history">
+                <div class="stat-card-head">
+                  <h3>Total Requests</h3>
+                  <span class="stat-card-icon-wrap" aria-hidden="true">
+                    <img class="stat-card-icon" src="../../images/icons/stat-total.svg" alt="">
+                  </span>
+                </div>
+                <p id="statTotal">0</p>
+              </article>
+              <article class="stat-card stat-card-link stat-card-pending" data-target-tab="pending" role="link" tabindex="0" aria-label="Open pending requests">
+                <div class="stat-card-head">
+                  <h3>Pending</h3>
+                  <span class="stat-card-icon-wrap" aria-hidden="true">
+                    <img class="stat-card-icon" src="../../images/icons/stat-pending.svg" alt="">
+                  </span>
+                </div>
+                <p id="statPending">0</p>
+              </article>
+              <article class="stat-card stat-card-link stat-card-confirmed" data-target-tab="confirmed" role="link" tabindex="0" aria-label="Open confirmed requests">
+                <div class="stat-card-head">
+                  <h3>Confirmed</h3>
+                  <span class="stat-card-icon-wrap" aria-hidden="true">
+                    <img class="stat-card-icon" src="../../images/icons/stat-confirmed.svg" alt="">
+                  </span>
+                </div>
+                <p id="statConfirmed">0</p>
+              </article>
             </div>
           </div>
 
-          <div class="overview-stats">
-            <article class="stat-card stat-card-link stat-card-total" data-target-tab="history" role="link" tabindex="0" aria-label="Open service request history">
-              <div class="stat-card-head">
-                <h3>Total Requests</h3>
-                <span class="stat-card-icon-wrap" aria-hidden="true">
-                  <img class="stat-card-icon" src="../../images/icons/stat-total.svg" alt="">
-                </span>
+          <div class="overview-grid">
+            <div class="overview-recent">
+              <div class="overview-recent-head">
+                <div>
+                  <h2>Recent Requests</h2>
+                </div>
+                <a class="overview-new-btn" href="book.html">New Request</a>
               </div>
-              <p id="statTotal">0</p>
-            </article>
-            <article class="stat-card stat-card-link stat-card-pending" data-target-tab="pending" role="link" tabindex="0" aria-label="Open pending requests">
-              <div class="stat-card-head">
-                <h3>Pending</h3>
-                <span class="stat-card-icon-wrap" aria-hidden="true">
-                  <img class="stat-card-icon" src="../../images/icons/stat-pending.svg" alt="">
-                </span>
+              <div class="overview-recent-list" id="overviewRecentList">
+                <div class="overview-empty">Loading your recent requests...</div>
               </div>
-              <p id="statPending">0</p>
-            </article>
-            <article class="stat-card stat-card-link stat-card-confirmed" data-target-tab="confirmed" role="link" tabindex="0" aria-label="Open confirmed requests">
-              <div class="stat-card-head">
-                <h3>Confirmed</h3>
-                <span class="stat-card-icon-wrap" aria-hidden="true">
-                  <img class="stat-card-icon" src="../../images/icons/stat-confirmed.svg" alt="">
-                </span>
-              </div>
-              <p id="statConfirmed">0</p>
-            </article>
-          </div>
-
-          <div class="overview-recent">
-            <div class="overview-recent-head">
-              <h2>Recent Requests</h2>
-              <a class="overview-new-btn" href="book.html">+ New Request</a>
-            </div>
-            <div class="overview-recent-list" id="overviewRecentList">
-              <div class="overview-empty">Loading your recent requests...</div>
             </div>
           </div>
         </section>

@@ -16,11 +16,24 @@
   };
 
   ns.validateSuffixField = function validateSuffixField(el) {
-    const raw = String((el && el.value) || '').trim();
+    const checkedOption = typeof document !== 'undefined'
+      ? document.querySelector('input[name="suffixOption"]:checked')
+      : null;
+
+    if (!checkedOption) {
+      return 'Select a suffix.';
+    }
+
+    const raw = String(checkedOption.value || '').trim();
     const normalized = typeof ns.normalizeSuffix === 'function' ? ns.normalizeSuffix(raw) : raw;
     if (normalized == null || !ALLOWED_SUFFIXES.includes(normalized)) {
-      return 'Choose a valid suffix option.';
+      return 'Select a valid suffix.';
     }
+
+    if (el) {
+      el.value = normalized;
+    }
+
     return null;
   };
 })();

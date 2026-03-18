@@ -4,16 +4,20 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>Admin Dashboard - HomeFixSolution</title>
-	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260308ac">
+	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260318c">
 </head>
 <body>
 	<div class="app-shell">
 		<header class="topbar">
 			<div class="topbar-left">
+				<button class="sidebar-toggle" id="adminSidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">&#9776;</button>
 				<div class="logo-wrapper" aria-hidden="true">
 					<img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
 				</div>
-				<div class="app-title">Admin Dashboard</div>
+				<div class="app-title-wrap">
+					<div class="app-title">Admin Dashboard</div>
+					<div class="app-subtitle">Operations and account control center</div>
+				</div>
 			</div>
 			<div class="topbar-right">
 				<span id="adminSessionText" class="session-text">Checking admin session...</span>
@@ -23,54 +27,60 @@
 
 		<div class="layout">
 			<aside class="sidebar">
-				<button class="nav-link active" type="button" data-section="overview">Home Overview</button>
-				<p class="nav-section-title">Management</p>
-				<details class="nav-group" id="manageAccountsGroup">
-					<summary class="nav-link manage-summary" id="manageAccountsSummary">Manage Accounts <span class="nav-caret">▼</span></summary>
-					<div class="nav-submenu">
-						<button class="nav-sub-link" type="button" data-section="create-technician">Create Technician Account</button>
-						<button class="nav-sub-link" type="button" data-section="accounts" data-filter="technician">Technicians</button>
-						<button class="nav-sub-link" type="button" data-section="accounts" data-filter="customer">Customers</button>
-					</div>
-				</details>
-				<details class="nav-group" id="manageRequestsGroup">
-					<summary class="nav-link manage-summary" id="manageRequestsSummary">Manage Requests <span class="nav-caret">▼</span></summary>
-					<div class="nav-submenu">
-						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="waiting">Waiting</button>
-						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="accepted">Accepted</button>
-						<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="cancelled">Cancelled</button>
-					</div>
-				</details>
-				<p class="nav-section-title nav-section-title-spaced">Session</p>
-				<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
+				<div class="sidebar-main">
+					<p class="nav-section-title">Overview</p>
+					<button class="nav-link active" type="button" data-section="overview">Overview</button>
+					<p class="nav-section-title">Requests</p>
+					<details class="nav-group" id="manageRequestsGroup">
+						<summary class="nav-link manage-summary" id="manageRequestsSummary">Requests <span class="nav-caret">▼</span></summary>
+						<div class="nav-submenu">
+							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="waiting">Waiting</button>
+							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="accepted">Active</button>
+							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="cancelled">Cancelled</button>
+						</div>
+					</details>
+					<p class="nav-section-title">Accounts</p>
+					<details class="nav-group" id="manageAccountsGroup">
+						<summary class="nav-link manage-summary" id="manageAccountsSummary">Accounts <span class="nav-caret">▼</span></summary>
+						<div class="nav-submenu">
+							<button class="nav-sub-link" type="button" data-section="accounts" data-filter="technician">Technicians</button>
+							<button class="nav-sub-link" type="button" data-section="accounts" data-filter="customer">Customers</button>
+							<button class="nav-sub-link" type="button" data-section="create-technician">Add Technician</button>
+						</div>
+					</details>
+					<p class="nav-section-title nav-section-title-spaced">Monitoring</p>
+					<button class="nav-link" type="button" data-section="reports">Reports</button>
+					<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
+				</div>
 				<a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
 			</aside>
 
 			<main class="content">
 				<section class="panel" id="overview" data-panel="overview">
-					<h1 class="panel-title">HOME OVERVIEW</h1>
 					<div class="overview-grid">
-						<article class="stat-card">
+						<button class="stat-card stat-card-action" type="button" data-section="accounts" data-filter="customer" aria-label="Open customer accounts">
 							<h3>Customer Accounts</h3>
 							<p id="ovCustomerAccounts">0</p>
-						</article>
-						<article class="stat-card">
+						</button>
+						<button class="stat-card stat-card-action" type="button" data-section="accounts" data-filter="technician" aria-label="Open technician accounts">
 							<h3>Technician Accounts</h3>
 							<p id="ovTechnicianAccounts">0</p>
-						</article>
-						<article class="stat-card">
+						</button>
+						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="waiting" aria-label="Open pending requests">
 							<h3>Pending Requests</h3>
 							<p id="ovPendingRequests">0</p>
-						</article>
-						<article class="stat-card">
+						</button>
+						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="accepted" aria-label="Open in progress requests">
 							<h3>In Progress Requests</h3>
 							<p id="ovInProgressRequests">0</p>
-						</article>
+						</button>
 					</div>
 
 					<div class="panel-head">
 						<h2>Recent Requests</h2>
-						<button type="button" class="btn-secondary" id="refreshOverviewBtn">Refresh Overview</button>
+						<button type="button" class="btn-secondary icon-refresh-btn" id="refreshOverviewBtn" aria-label="Refresh overview" title="Refresh overview">
+							<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+						</button>
 					</div>
 					<div class="table-wrap">
 						<table class="data-table">
@@ -99,7 +109,9 @@
 								<option value="active">Active</option>
 								<option value="inactive">Inactive</option>
 							</select>
-							<button type="button" class="btn-secondary" id="refreshAccountsBtn">Refresh</button>
+							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshAccountsBtn" aria-label="Refresh accounts" title="Refresh accounts">
+								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+							</button>
 						</div>
 					</div>
 
@@ -108,6 +120,8 @@
 							<thead>
 								<tr>
 									<th>Name</th>
+									<th id="accountsTechnicianIdHeader" hidden>Technician ID</th>
+									<th id="accountsRatingHeader" hidden>Rating</th>
 									<th>Email</th>
 									<th>Status</th>
 									<th id="accountsSkillsHeader">Skills</th>
@@ -188,7 +202,9 @@
 				<section class="panel" id="requests" data-panel="requests" hidden>
 					<div class="panel-head">
 						<h1 class="panel-title"><span id="requestsPanelTitleLabel">WAITING</span> REQUESTS</h1>
-						<button type="button" class="btn-secondary" id="refreshRequestsBtn">Refresh</button>
+						<button type="button" class="btn-secondary icon-refresh-btn" id="refreshRequestsBtn" aria-label="Refresh requests" title="Refresh requests">
+							<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+						</button>
 					</div>
 
 					<div class="table-wrap">
@@ -226,7 +242,40 @@
 								<option value="login" selected>Log In</option>
 								<option value="logout">Log Out</option>
 							</select>
-							<button type="button" class="btn-secondary" id="refreshSessionLogsBtn">Refresh Logs</button>
+							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshSessionLogsBtn" aria-label="Refresh session logs" title="Refresh session logs">
+								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+							</button>
+						</div>
+					</div>
+					<div class="table-wrap">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>Date</th>
+									<th>Time</th>
+									<th>Session Code</th>
+									<th id="sessionUserIdHeader">Customer Code</th>
+								</tr>
+							</thead>
+							<tbody id="sessionLogsTableBody">
+								<tr><td colspan="4">Loading session logs...</td></tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="table-pagination" id="sessionLogsPagination">
+						<button type="button" class="btn-secondary" id="sessionPrevPageBtn">Previous</button>
+						<span id="sessionPageIndicator">Page 1 of 1</span>
+						<button type="button" class="btn-secondary" id="sessionNextPageBtn">Next</button>
+					</div>
+				</section>
+
+				<section class="panel" id="reports" data-panel="reports" hidden>
+					<div class="panel-head">
+						<h1 class="panel-title">TECHNICIAN REPORTS</h1>
+						<div class="panel-controls">
+							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshReportsBtn" aria-label="Refresh reports" title="Refresh reports">
+								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+							</button>
 						</div>
 					</div>
 					<div class="table-wrap">
@@ -234,12 +283,15 @@
 							<thead>
 								<tr>
 									<th>Time</th>
-									<th>Session ID</th>
-									<th id="sessionUserIdHeader">Customer ID</th>
+									<th>Request ID</th>
+									<th>Customer</th>
+									<th>Technician ID</th>
+									<th>Reason</th>
+									<th>Details</th>
 								</tr>
 							</thead>
-							<tbody id="sessionLogsTableBody">
-								<tr><td colspan="3">Loading session logs...</td></tr>
+							<tbody id="reportsTableBody">
+								<tr><td colspan="6">Loading reports...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -288,10 +340,10 @@
 	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 	<script src="../../firebase/config/firebase-config.js"></script>
-	<script src="../../databasehfs/users/core.js"></script>
-	<script src="../../databasehfs/users/user-profile-database.js?v=20260308m"></script>
-	<script src="../../databasehfs/users/booking-database.js?v=20260308m"></script>
+	<script src="../../databasehfs/users/core.js?v=20260312a"></script>
+	<script src="../../databasehfs/users/user-profile-database.js?v=20260312a"></script>
+	<script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
 	<script src="../../databasehfs/users/user-database.js"></script>
-	<script src="../../Js/admin/dashboard.js?v=20260309p"></script>
+	<script src="../../Js/admin/dashboard.js?v=20260318a"></script>
 </body>
 </html>

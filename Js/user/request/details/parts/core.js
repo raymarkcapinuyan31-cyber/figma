@@ -83,7 +83,7 @@
   const requestAddressBarangay = document.getElementById('requestAddressBarangay');
   const requestAddressAdditionalDetails = document.getElementById('requestAddressAdditionalDetails');
   const requestSaveAddressBtn = document.getElementById('requestSaveAddressBtn');
-  const requestTechnicianSelect = document.getElementById('requestTechnician');
+  const requestTechnicianList = document.getElementById('requestTechnicianList');
 
   const schedulePicker = document.getElementById('schedulePicker');
   const monthLabel = document.getElementById('calendarMonth');
@@ -109,6 +109,12 @@
   const summaryMedia = document.getElementById('summaryMedia');
   const summaryMediaPreview = document.getElementById('summaryMediaPreview');
   const confirmTerms = document.getElementById('confirmTerms');
+  const openTermsBtn = document.getElementById('openTermsBtn');
+  const termsReadStatus = document.getElementById('termsReadStatus');
+  const termsModal = document.getElementById('termsModal');
+  const termsScrollBox = document.getElementById('termsScrollBox');
+  const termsCloseBtn = document.getElementById('termsCloseBtn');
+  const termsProceedBtn = document.getElementById('termsProceedBtn');
   const submittedRequestId = document.getElementById('submittedRequestId');
   const copyRequestIdBtn = document.getElementById('copyRequestIdBtn');
   const copyRequestIdStatus = document.getElementById('copyRequestIdStatus');
@@ -132,6 +138,9 @@
   let selectedRequestAddressId = '';
   let availableTechnicians = [];
   let selectedTechnicianId = '';
+  let blockedScheduleSlotsByDate = new Map();
+  let isLoadingBlockedSchedule = false;
+  let hasScrolledTermsToEnd = false;
 
   const searchParams = new URLSearchParams(window.location.search);
   const requestedType = String(searchParams.get('type') || searchParams.get('bookingType') || '').toLowerCase();
@@ -139,6 +148,13 @@
     window.location.href = 'book.html';
     return;
   }
+
+  const IS_HOME_SERVICE_FLOW = requestedType === 'technician';
+  const ADDRESS_STEP = IS_HOME_SERVICE_FLOW ? 2 : -1;
+  const TECHNICIAN_STEP = IS_HOME_SERVICE_FLOW ? 3 : -1;
+  const SCHEDULE_STEP = IS_HOME_SERVICE_FLOW ? 4 : 2;
+  const SUMMARY_STEP = IS_HOME_SERVICE_FLOW ? 5 : 3;
+  const SUBMITTED_STEP = IS_HOME_SERVICE_FLOW ? 6 : 4;
 
   const slotValues = ['9:00am - 10:00am', '10:00am - 11:00am', '12:00pm - 1:00pm', '1:00pm - 2:00pm', '2:00pm - 3:00pm', '3:00pm - 4:00pm'];
   const today = new Date();
@@ -235,16 +251,57 @@
     return String(profile && (profile.email || profile.emailAddress || profile.email_address) || '').trim().toLowerCase();
   }
 
+  function parseRatingValue(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    if (num < 0 || num > 5) return null;
+    return num;
+  }
+
+  function getTechnicianRatingSummary(profile) {
+    const source = profile && typeof profile === 'object' ? profile : {};
+    const ratingCandidates = [
+      source.rating,
+      source.averageRating,
+      source.avgRating,
+      source.technicianRating,
+      source.reviewRating,
+      source.customerRating,
+      source.stars,
+      source.ratingAverage
+    ];
+
+    let rating = null;
+    for (let i = 0; i < ratingCandidates.length; i += 1) {
+      const parsed = parseRatingValue(ratingCandidates[i]);
+      if (parsed != null) {
+        rating = parsed;
+        break;
+      }
+    }
+
+    if (rating == null) {
+      return 'Rating: No ratings yet';
+    }
+
+    return `Rating: ${rating.toFixed(1)}/5`;
+  }
+
   function normalizeTechnicianEntry(uid, profile) {
-    const id = String(uid || profile && profile.uid || profile && profile.id || '').trim();
+    const resolvedUid = String(profile && (profile.uid || profile.id) || uid || '').trim();
+    const id = resolvedUid;
+    const sourceKey = String(uid || '').trim();
     const email = getTechnicianEmail(profile);
     const name = buildTechnicianDisplayName(profile) || email || 'Technician';
     const skills = parseTechnicianSkills(profile);
+    const ratingLabel = getTechnicianRatingSummary(profile);
     return {
       id,
-      uid: id,
+      uid: resolvedUid,
+      sourceKey,
       email,
       name,
+      ratingLabel,
       skills,
       raw: profile && typeof profile === 'object' ? profile : {}
     };
@@ -271,29 +328,39 @@
   }
 
   function renderTechnicianOptions(options) {
-    if (!requestTechnicianSelect) return;
+    if (!requestTechnicianList) return;
 
     const items = Array.isArray(options) ? options : [];
-    requestTechnicianSelect.innerHTML = '';
+    if (!items.length) {
+      selectedTechnicianId = '';
+      requestTechnicianList.innerHTML = '<div class="address-empty">No technician available.</div>';
+      return;
+    }
 
-    const firstOption = document.createElement('option');
-    firstOption.value = '';
-    firstOption.textContent = items.length ? 'Select technician' : 'No available technician for this category yet';
-    requestTechnicianSelect.appendChild(firstOption);
+    if (!selectedTechnicianId || !items.some((entry) => String(entry.id || '') === selectedTechnicianId)) {
+      selectedTechnicianId = '';
+    }
 
-    items.forEach((entry) => {
-      const option = document.createElement('option');
-      option.value = String(entry.id || '').trim();
-      option.textContent = String(entry.name || 'Technician').trim();
-      requestTechnicianSelect.appendChild(option);
+    const cards = items.map((entry) => {
+      const id = String(entry && entry.id ? entry.id : '').trim();
+      const name = String(entry && entry.name ? entry.name : 'Technician').trim() || 'Technician';
+      const ratingLabel = String(entry && entry.ratingLabel ? entry.ratingLabel : 'Rating: No ratings yet').trim();
+      const checked = selectedTechnicianId && selectedTechnicianId === id;
+      const checkedAttr = checked ? ' checked' : '';
+      const selectedClass = checked ? ' selected' : '';
+
+      return `
+        <label class="technician-option${selectedClass}">
+          <input type="radio" name="request_selected_technician" value="${escapeHtml(id)}"${checkedAttr}>
+          <div class="details">
+            <strong>${escapeHtml(name)}</strong>
+            <span>${escapeHtml(ratingLabel)}</span>
+          </div>
+        </label>
+      `;
     });
 
-    if (selectedTechnicianId && items.some((entry) => String(entry.id || '') === selectedTechnicianId)) {
-      requestTechnicianSelect.value = selectedTechnicianId;
-    } else {
-      selectedTechnicianId = '';
-      requestTechnicianSelect.value = '';
-    }
+    requestTechnicianList.innerHTML = cards.join('');
   }
 
   function getSelectedTechnician() {
@@ -301,7 +368,7 @@
   }
 
   async function refreshTechnicianOptions() {
-    if (requestedType !== 'technician' || !requestTechnicianSelect) return;
+    if (requestedType !== 'technician' || !requestTechnicianList) return;
 
     const category = String(categoryInput && categoryInput.value ? categoryInput.value : '').trim().toLowerCase();
     if (!category) {
@@ -311,7 +378,7 @@
     }
 
     const requestSeq = ++technicianLoadSeq;
-    requestTechnicianSelect.disabled = true;
+    requestTechnicianList.innerHTML = '<div class="address-empty">Loading technicians...</div>';
 
     try {
       const rtdb = getRealtimeDbInstance();
@@ -336,10 +403,6 @@
       if (requestSeq !== technicianLoadSeq) return;
       availableTechnicians = [];
       renderTechnicianOptions([]);
-    } finally {
-      if (requestSeq === technicianLoadSeq && requestTechnicianSelect) {
-        requestTechnicianSelect.disabled = false;
-      }
     }
   }
 
@@ -369,6 +432,10 @@
 
   function hasTextContent(value) {
     return /[A-Za-z0-9]/.test(String(value || ''));
+  }
+
+  function isValidDetailsTextFormat(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
   }
 
   function isValidHouseUnitFormat(value) {
@@ -505,8 +572,11 @@
     const selectedTechnician = getSelectedTechnician();
     if (!selectedTechnician) {
       if (errorRequestTechnician) errorRequestTechnician.textContent = 'Please choose a technician before continuing.';
-      if (requestTechnicianSelect && typeof requestTechnicianSelect.focus === 'function') {
-        requestTechnicianSelect.focus();
+      const firstOption = requestTechnicianList
+        ? requestTechnicianList.querySelector('input[name="request_selected_technician"]')
+        : null;
+      if (firstOption && typeof firstOption.focus === 'function') {
+        firstOption.focus();
       }
       return false;
     }
@@ -561,28 +631,28 @@
       'Not cold',
       'Low airflow',
       'Making noise',
-      'Other / Not sure'
+      'Others'
     ],
     appliance: [
       'Refrigerator problem',
       'Washing machine problem',
       'Dishwasher problem',
       'Microwave or oven problem',
-      'Other / Not sure'
+      'Others'
     ],
     electrical: [
       'Outlet or switch not working',
       'Light not working',
       'Ceiling fan not working',
       'Breaker keeps tripping',
-      'Other / Not sure'
+      'Others'
     ],
     plumbing: [
       'Leak (pipe or faucet)',
       'Clogged sink or drain',
       'Toilet problem',
       'Water heater problem',
-      'Other / Not sure'
+      'Others'
     ]
   };
   const INSTALLATION_OPTIONS_BY_CATEGORY = {
@@ -636,6 +706,277 @@
     return date.getFullYear() * 12 + date.getMonth();
   }
 
+  function toDateKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function normalizeTimeRangeKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\u2013|\u2014/g, '-')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*-\s*/g, '-');
+  }
+
+  function toSafeLockKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[.#$\[\]\/]/g, '_');
+  }
+
+  function parseRequestDateKey(item) {
+    const preferredDate = String(item && item.preferredDate ? item.preferredDate : '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return preferredDate;
+
+    const raw = String(item && (item.preferred_datetime || item.preferredSchedule) ? (item.preferred_datetime || item.preferredSchedule) : '').trim();
+    if (!raw) return '';
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return toDateKey(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()));
+  }
+
+  function parseRequestTimeRange(item) {
+    const preferredTime = String(item && item.preferredTime ? item.preferredTime : '').trim();
+    if (preferredTime) return preferredTime;
+
+    const raw = String(item && (item.preferred_datetime || item.preferredSchedule) ? (item.preferred_datetime || item.preferredSchedule) : '').trim();
+    if (!raw) return '';
+
+    const match = raw.match(/(\d{1,2}:\d{2}\s*[ap]m\s*[-\u2013\u2014]\s*\d{1,2}:\d{2}\s*[ap]m)/i);
+    return match ? String(match[1] || '').trim() : '';
+  }
+
+  function isBlockingRequestStatus(statusValue) {
+    const status = String(statusValue || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+    if (!status) return true;
+    if (status === 'cancelled' || status === 'declined' || status === 'rejected' || status === 'completed' || status === 'done' || status === 'resolved' || status === 'no-show') {
+      return false;
+    }
+    return status === 'reserved'
+      || status === 'pending'
+      || status === 'offered'
+      || status === 'accepted'
+      || status === 'confirmed'
+      || status === 'approved'
+      || status === 'in-progress'
+      || status === 'ongoing';
+  }
+
+  function getSlotStateFromStatus(statusValue) {
+    const status = normalizeStatusKey(statusValue);
+    if (!status) return 'reserved';
+    if (isAcceptedLockStatus(status)) return 'booked';
+    if (status === 'reserved' || status === 'pending' || status === 'offered') return 'reserved';
+    return '';
+  }
+
+  function prioritizeSlotState(currentState, incomingState) {
+    const current = String(currentState || '').trim().toLowerCase();
+    const incoming = String(incomingState || '').trim().toLowerCase();
+    if (incoming === 'booked') return 'booked';
+    if (current === 'booked') return 'booked';
+    if (incoming === 'reserved') return 'reserved';
+    if (current === 'reserved') return 'reserved';
+    return '';
+  }
+
+  function isRequestAssignedToTechnician(item, technician) {
+    const request = item && typeof item === 'object' ? item : {};
+    const details = request && request.requestDetails && typeof request.requestDetails === 'object'
+      ? request.requestDetails
+      : {};
+    const tech = technician && typeof technician === 'object' ? technician : {};
+
+    const techId = String(tech.id || tech.uid || '').trim();
+    const techEmail = String(tech.email || '').trim().toLowerCase();
+
+    const requestIds = [
+      request.assignedTechnicianId,
+      request.technicianId,
+      request.assignedToUid,
+      request.assignedTo,
+      details.selectedTechnicianId
+    ].map((entry) => String(entry || '').trim()).filter(Boolean);
+
+    const requestEmails = [
+      request.assignedTechnicianEmail,
+      request.technicianEmail,
+      request.assignedToEmail,
+      details.selectedTechnicianEmail
+    ].map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+
+    if (techId && requestIds.includes(techId)) return true;
+    if (techEmail && requestEmails.includes(techEmail)) return true;
+    return false;
+  }
+
+  function isSlotBlockedForSelection(date, timeRange) {
+    return !!getSlotBlockState(date, timeRange);
+  }
+
+  function getSlotBlockState(date, timeRange) {
+    if (!(date instanceof Date)) return false;
+
+    const dateKey = toDateKey(date);
+    if (!dateKey) return '';
+
+    const blockedMap = blockedScheduleSlotsByDate.get(dateKey);
+    if (!(blockedMap instanceof Map) || !blockedMap.size) return '';
+
+    return String(blockedMap.get(normalizeTimeRangeKey(timeRange)) || '').trim().toLowerCase();
+  }
+
+  function isStoreDropOffRequest(item) {
+    const request = item && typeof item === 'object' ? item : {};
+    const bookingType = String(request.bookingType || '').trim().toLowerCase();
+    const requestMode = String(request.requestMode || '').trim().toLowerCase();
+    const serviceMode = String(request.serviceMode || '').trim().toLowerCase();
+    return bookingType === 'appointment'
+      || requestMode === 'drop-off-store'
+      || serviceMode.includes('drop-off')
+      || serviceMode.includes('store');
+  }
+
+  function getTechnicianLockScopeKey(technician) {
+    const tech = technician && typeof technician === 'object' ? technician : {};
+    const raw = String(tech.id || tech.uid || tech.email || '').trim().toLowerCase();
+    return toSafeLockKey(raw);
+  }
+
+  function normalizeStatusKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  }
+
+  function isAcceptedLockStatus(value) {
+    const status = normalizeStatusKey(value);
+    return status === 'accepted'
+      || status === 'confirmed'
+      || status === 'approved'
+      || status === 'in-progress'
+      || status === 'ongoing';
+  }
+
+  function isActiveScheduleLock(value) {
+    const item = value && typeof value === 'object' ? value : {};
+    const status = normalizeStatusKey(item.state || item.status);
+    if (isAcceptedLockStatus(status)) return true;
+    if (status !== 'reserved') return false;
+    const expiresAt = Number(item.expiresAt || 0);
+    return Number.isFinite(expiresAt) && expiresAt > Date.now();
+  }
+
+  function addLockedTimeToMap(map, dateKey, timeValue, state) {
+    const cleanDate = String(dateKey || '').trim();
+    const timeKey = normalizeTimeRangeKey(timeValue);
+    const stateKey = String(state || '').trim().toLowerCase();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate) || !timeKey || !stateKey) return;
+    const bucket = map.get(cleanDate) || new Map();
+    const nextState = prioritizeSlotState(bucket.get(timeKey), stateKey);
+    if (!nextState) return;
+    bucket.set(timeKey, nextState);
+    map.set(cleanDate, bucket);
+  }
+
+  async function appendLocksToBlockedMap(map, selectedTechnician) {
+    const rtdb = getRealtimeDbInstance();
+    if (!rtdb) return;
+
+    if (IS_HOME_SERVICE_FLOW) {
+      const techScope = getTechnicianLockScopeKey(selectedTechnician);
+      if (!techScope) return;
+
+      const snapshot = await rtdb.ref(`scheduleLocks/technician/${techScope}`).once('value');
+      const byDate = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+      Object.keys(byDate).forEach((dateKey) => {
+        const byTime = byDate[dateKey] && typeof byDate[dateKey] === 'object' ? byDate[dateKey] : {};
+        Object.keys(byTime).forEach((timeNodeKey) => {
+          const lockEntry = byTime[timeNodeKey] && typeof byTime[timeNodeKey] === 'object' ? byTime[timeNodeKey] : {};
+          if (!isActiveScheduleLock(lockEntry)) return;
+          const state = getSlotStateFromStatus(lockEntry.state || lockEntry.status);
+          addLockedTimeToMap(map, dateKey, lockEntry.preferredTime || lockEntry.time || timeNodeKey, state || 'reserved');
+        });
+      });
+      return;
+    }
+
+    const snapshot = await rtdb.ref('scheduleLocks/appointment').once('value');
+    const byDate = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+    Object.keys(byDate).forEach((dateKey) => {
+      const byTime = byDate[dateKey] && typeof byDate[dateKey] === 'object' ? byDate[dateKey] : {};
+      Object.keys(byTime).forEach((timeNodeKey) => {
+        const lockEntry = byTime[timeNodeKey] && typeof byTime[timeNodeKey] === 'object' ? byTime[timeNodeKey] : {};
+        if (!isActiveScheduleLock(lockEntry)) return;
+        const state = getSlotStateFromStatus(lockEntry.state || lockEntry.status);
+        addLockedTimeToMap(map, dateKey, lockEntry.preferredTime || lockEntry.time || timeNodeKey, state || 'reserved');
+      });
+    });
+  }
+
+  async function refreshBlockedScheduleSlots() {
+    blockedScheduleSlotsByDate = new Map();
+
+    const selectedTechnician = getSelectedTechnician();
+    if (IS_HOME_SERVICE_FLOW && !selectedTechnician) {
+      renderSlots();
+      return;
+    }
+
+    if (!(usersDb && typeof usersDb.getAllRequests === 'function')) {
+      renderSlots();
+      return;
+    }
+
+    isLoadingBlockedSchedule = true;
+
+    try {
+      const requests = await usersDb.getAllRequests();
+      const list = Array.isArray(requests) ? requests : [];
+      const map = new Map();
+
+      list.forEach((item) => {
+        if (!isBlockingRequestStatus(item && item.status)) return;
+
+        if (IS_HOME_SERVICE_FLOW) {
+          if (!isRequestAssignedToTechnician(item, selectedTechnician)) return;
+        } else if (!isStoreDropOffRequest(item)) {
+          return;
+        }
+
+        const dateKey = parseRequestDateKey(item);
+        const timeRange = parseRequestTimeRange(item);
+        if (!dateKey || !timeRange) return;
+
+        const state = getSlotStateFromStatus(item && item.status);
+        addLockedTimeToMap(map, dateKey, timeRange, state || 'reserved');
+      });
+
+      try {
+        await appendLocksToBlockedMap(map, selectedTechnician);
+      } catch (_) {
+      }
+
+      blockedScheduleSlotsByDate = map;
+    } catch (_) {
+      blockedScheduleSlotsByDate = new Map();
+    } finally {
+      isLoadingBlockedSchedule = false;
+    }
+
+    if (selectedDate && selectedTime && isSlotBlockedForSelection(selectedDate, selectedTime)) {
+      selectedTime = null;
+      syncPreferredText();
+    }
+
+    renderSlots();
+  }
+
   function isDateWithinAllowedRange(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
     return date >= todayStart && date <= maxSelectableDate;
@@ -664,9 +1005,34 @@
     slotValues.forEach((value) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'time-slot' + (selectedTime === value ? ' active' : '');
-      btn.textContent = value;
+      const isBlocked = selectedDate ? isSlotBlockedForSelection(selectedDate, value) : false;
+      const blockState = selectedDate ? getSlotBlockState(selectedDate, value) : '';
+      btn.className = 'time-slot' + (selectedTime === value ? ' active' : '') + (isBlocked ? ' disabled' : '');
+      const timeText = document.createElement('span');
+      timeText.className = 'time-slot-time';
+      timeText.textContent = value;
+      btn.appendChild(timeText);
+
+      if (isBlocked) {
+        const badge = document.createElement('span');
+        badge.className = 'time-slot-note ' + (blockState === 'booked' ? 'booked' : 'reserved');
+        badge.textContent = blockState === 'booked' ? 'Booked' : 'Reserved';
+        btn.appendChild(badge);
+      }
+
+      btn.disabled = !!isBlocked || isLoadingBlockedSchedule;
+      if (isBlocked) {
+        const unavailableTitle = blockState === 'booked'
+          ? (requestedType === 'technician'
+            ? 'This time is already booked for the selected technician.'
+            : 'This time is already booked.')
+          : (requestedType === 'technician'
+            ? 'This time is currently reserved for the selected technician.'
+            : 'This time is currently reserved.');
+        btn.title = unavailableTitle;
+      }
       btn.addEventListener('click', () => {
+        if (isBlocked) return;
         selectedTime = value;
         renderSlots();
         syncPreferredText();
@@ -1086,6 +1452,35 @@
     serviceModeNote.textContent = getServiceModeLabel();
   }
 
+  function setTermsReadStatus(text, isConfirmed) {
+    if (!termsReadStatus) return;
+    termsReadStatus.textContent = text || '';
+    termsReadStatus.style.color = isConfirmed ? '#1a5f2b' : '#445e7a';
+    termsReadStatus.style.display = text ? 'block' : 'none';
+  }
+
+  function closeTermsModal() {
+    if (!termsModal) return;
+    termsModal.hidden = true;
+  }
+
+  function openTermsModal() {
+    if (!termsModal || !termsScrollBox) return;
+    termsModal.hidden = false;
+    hasScrolledTermsToEnd = false;
+    if (termsProceedBtn) termsProceedBtn.disabled = true;
+    termsScrollBox.scrollTop = 0;
+    updateTermsScrollState();
+  }
+
+  function updateTermsScrollState() {
+    if (!termsScrollBox || !termsProceedBtn) return;
+    const threshold = 8;
+    const atEnd = (termsScrollBox.scrollTop + termsScrollBox.clientHeight) >= (termsScrollBox.scrollHeight - threshold);
+    hasScrolledTermsToEnd = !!atEnd;
+    termsProceedBtn.disabled = !hasScrolledTermsToEnd;
+  }
+
   function formatSummarySchedule() {
     if (selectedDate && selectedTime) {
       const dateLabel = selectedDate.toLocaleDateString('en-US', {
@@ -1255,46 +1650,41 @@
   function setStep(step) {
     currentStep = step;
     const bookCard = form ? form.closest('.book-card') : null;
-    const isHomeServiceFlow = requestedType === 'technician';
-    const technicianStep = 4;
-    const summaryStep = isHomeServiceFlow ? 5 : 3;
-    const submittedStep = isHomeServiceFlow ? 6 : 4;
-    const addressStep = 3;
 
     if (flowTitle) {
       if (step === 1) flowTitle.textContent = 'SERVICE DETAILS';
-      if (step === 2) flowTitle.textContent = 'SCHEDULE APPOINTMENT';
-      if (isHomeServiceFlow && step === addressStep) flowTitle.textContent = 'SELECT ADDRESS';
-      if (isHomeServiceFlow && step === technicianStep) flowTitle.textContent = 'CHOOSE TECHNICIAN';
-      if (step === summaryStep) flowTitle.textContent = 'REQUEST SUMMARY';
-      if (step === submittedStep) flowTitle.textContent = 'REQUEST SUBMITTED';
-      flowTitle.style.display = (step === summaryStep || step === submittedStep) ? 'none' : '';
+      if (IS_HOME_SERVICE_FLOW && step === ADDRESS_STEP) flowTitle.textContent = 'SELECT ADDRESS';
+      if (IS_HOME_SERVICE_FLOW && step === TECHNICIAN_STEP) flowTitle.textContent = 'CHOOSE TECHNICIAN';
+      if (step === SCHEDULE_STEP) flowTitle.textContent = 'SCHEDULE APPOINTMENT';
+      if (step === SUMMARY_STEP) flowTitle.textContent = 'REQUEST SUMMARY';
+      if (step === SUBMITTED_STEP) flowTitle.textContent = 'REQUEST SUBMITTED';
+      flowTitle.style.display = (step === SUMMARY_STEP || step === SUBMITTED_STEP) ? 'none' : '';
     }
 
     if (form) {
-      form.classList.toggle('flow-summary-mode', step === summaryStep);
-      form.classList.toggle('flow-submitted-mode', step === submittedStep);
+      form.classList.toggle('flow-summary-mode', step === SUMMARY_STEP);
+      form.classList.toggle('flow-submitted-mode', step === SUBMITTED_STEP);
     }
 
     if (bookCard) {
-      bookCard.classList.toggle('flow-centered-page', step === summaryStep || step === submittedStep);
-      bookCard.classList.toggle('submitted-centered', step === submittedStep);
+      bookCard.classList.toggle('flow-centered-page', step === SUBMITTED_STEP);
+      bookCard.classList.toggle('submitted-centered', step === SUBMITTED_STEP);
     }
 
     if (step1) step1.hidden = step !== 1;
-    if (step2) step2.hidden = step !== 2;
-    if (step3Address) step3Address.hidden = !isHomeServiceFlow || step !== addressStep;
-    if (step4Technician) step4Technician.hidden = !isHomeServiceFlow || step !== technicianStep;
-    if (step3) step3.hidden = step !== summaryStep;
-    if (step4) step4.hidden = step !== submittedStep;
+    if (step2) step2.hidden = step !== SCHEDULE_STEP;
+    if (step3Address) step3Address.hidden = !IS_HOME_SERVICE_FLOW || step !== ADDRESS_STEP;
+    if (step4Technician) step4Technician.hidden = !IS_HOME_SERVICE_FLOW || step !== TECHNICIAN_STEP;
+    if (step3) step3.hidden = step !== SUMMARY_STEP;
+    if (step4) step4.hidden = step !== SUBMITTED_STEP;
 
     if (nextBtn) {
       if (step === 1) nextBtn.textContent = 'CONTINUE';
-      if (step === 2) nextBtn.textContent = 'NEXT';
-      if (isHomeServiceFlow && step === addressStep) nextBtn.textContent = 'NEXT';
-      if (isHomeServiceFlow && step === technicianStep) nextBtn.textContent = 'NEXT';
-      if (step === summaryStep) nextBtn.textContent = 'SUBMIT REQUEST';
-      if (step === submittedStep) nextBtn.textContent = 'VIEW SERVICE HISTORY';
+      if (step === SCHEDULE_STEP) nextBtn.textContent = 'NEXT';
+      if (IS_HOME_SERVICE_FLOW && step === ADDRESS_STEP) nextBtn.textContent = 'NEXT';
+      if (IS_HOME_SERVICE_FLOW && step === TECHNICIAN_STEP) nextBtn.textContent = 'NEXT';
+      if (step === SUMMARY_STEP) nextBtn.textContent = 'SUBMIT REQUEST';
+      if (step === SUBMITTED_STEP) nextBtn.textContent = 'VIEW SERVICE HISTORY';
       nextBtn.disabled = false;
     }
 
@@ -1303,16 +1693,20 @@
       backBtn.textContent = 'BACK';
     }
 
-    if (isHomeServiceFlow && step === addressStep) {
+    if (IS_HOME_SERVICE_FLOW && step === ADDRESS_STEP) {
       setRequestAddAddressOpen(false);
       refreshRequestAddresses();
     }
 
-    if (isHomeServiceFlow && step === technicianStep) {
+    if (IS_HOME_SERVICE_FLOW && step === TECHNICIAN_STEP) {
       refreshTechnicianOptions();
     }
 
-    if (step === summaryStep) {
+    if (step === SCHEDULE_STEP) {
+      refreshBlockedScheduleSlots();
+    }
+
+    if (step === SUMMARY_STEP) {
       if (errorTerms) errorTerms.textContent = '';
       updateSummary();
     }
@@ -1386,7 +1780,10 @@
       setFieldError(issueInput, errorIssue, 'Please describe the issue.');
       firstInvalid = firstInvalid || issueInput;
     } else if (!hasTextContent(issueText)) {
-      setFieldError(issueInput, errorIssue, 'Issue details must include readable text.');
+      setFieldError(issueInput, errorIssue, 'Please use words to describe the issue.');
+      firstInvalid = firstInvalid || issueInput;
+    } else if (!isValidDetailsTextFormat(issueText)) {
+      setFieldError(issueInput, errorIssue, 'Only letters, numbers, spaces, commas, and hyphens are allowed.');
       firstInvalid = firstInvalid || issueInput;
     } else if (issueText.length < MIN_ISSUE_LENGTH || issueText.length > MAX_ISSUE_LENGTH) {
       setFieldError(issueInput, errorIssue, `Issue details must be ${MIN_ISSUE_LENGTH}-${MAX_ISSUE_LENGTH} characters.`);
@@ -1410,6 +1807,18 @@
 
     if (!isDateWithinAllowedRange(selectedDate)) {
       setFieldError(schedulePicker, errorSchedule, 'Please select a date from today up to 2 months ahead.');
+      return false;
+    }
+
+    if (isSlotBlockedForSelection(selectedDate, selectedTime)) {
+      const blockState = getSlotBlockState(selectedDate, selectedTime);
+      selectedTime = null;
+      syncPreferredText();
+      renderSlots();
+      const message = blockState === 'booked'
+        ? 'That schedule is already booked for this technician. Please choose another time.'
+        : 'That schedule is reserved and waiting for technician response. Please choose another time.';
+      setFieldError(schedulePicker, errorSchedule, message);
       return false;
     }
 
@@ -1481,10 +1890,8 @@
     clearFieldError(null, errorSubmit);
     if (errorTerms) errorTerms.textContent = '';
     if (isSubmitting) return false;
-    const summaryStep = requestedType === 'technician' ? 5 : 3;
-    const submittedStep = requestedType === 'technician' ? 6 : 4;
 
-    async function waitForActiveUser(timeoutMs = 2500) {
+    async function waitForActiveUser(timeoutMs = 1200) {
       const auth = usersDb && usersDb.auth ? usersDb.auth : null;
       if (!auth) return null;
       if (auth.currentUser && auth.currentUser.uid) return auth.currentUser;
@@ -1503,7 +1910,7 @@
 
         const timer = setTimeout(() => {
           done(auth.currentUser && auth.currentUser.uid ? auth.currentUser : null);
-        }, Math.max(800, Number(timeoutMs) || 2500));
+        }, Math.max(500, Number(timeoutMs) || 1200));
 
         if (typeof auth.onAuthStateChanged === 'function') {
           unsubscribe = auth.onAuthStateChanged((user) => {
@@ -1526,7 +1933,7 @@
     }
 
     if (!signedInUser) {
-      const recoveredUser = await waitForActiveUser(2800);
+      const recoveredUser = await waitForActiveUser(1400);
       if (recoveredUser) {
         signedInUser = recoveredUser;
       }
@@ -1556,14 +1963,29 @@
     const schedulePayload = buildSchedulePayload(selectedDate, selectedTime);
     const selectedTechnician = requestedType === 'technician' ? getSelectedTechnician() : null;
 
+    await refreshBlockedScheduleSlots();
+    if (selectedDate && selectedTime && isSlotBlockedForSelection(selectedDate, selectedTime)) {
+      const blockState = getSlotBlockState(selectedDate, selectedTime);
+      const unavailableMsg = blockState === 'booked'
+        ? (requestedType === 'technician'
+          ? 'That schedule is already booked for this technician. Please choose another time.'
+          : 'That schedule is already booked. Please choose another time.')
+        : (requestedType === 'technician'
+          ? 'That schedule is reserved and waiting for technician response. Please choose another time.'
+          : 'That schedule is reserved. Please choose another time.');
+      setFieldError(schedulePicker, errorSchedule, unavailableMsg);
+      setStep(SCHEDULE_STEP);
+      return false;
+    }
+
     if (requestedType === 'technician' && !selectedTechnician) {
       if (errorRequestTechnician) errorRequestTechnician.textContent = 'Please choose a technician before submitting.';
-      setStep(3);
+      setStep(TECHNICIAN_STEP);
       return false;
     }
 
     if (!confirmTerms || !confirmTerms.checked) {
-      if (errorTerms) errorTerms.textContent = 'Please accept the Terms and Conditions to continue.';
+      if (errorTerms) errorTerms.textContent = 'Please read the Terms and Conditions and confirm before submitting.';
       return false;
     }
 
@@ -1609,8 +2031,6 @@
 
     try {
       const bookingType = requestedType === 'appointment' ? 'appointment' : 'technician';
-      const addressStep = 3;
-      const technicianStep = 4;
       const fallbackLocation = {
         addressId: '',
         houseUnit: '',
@@ -1627,13 +2047,13 @@
 
       if (bookingType === 'technician' && !preferredAddressId) {
         setFieldError(null, errorSubmit, 'Please select a saved address before submitting Home Service.');
-        setStep(addressStep);
+        setStep(ADDRESS_STEP);
         return false;
       }
 
       if (bookingType === 'technician' && !selectedTechnician) {
         setFieldError(null, errorSubmit, 'Please choose a technician before submitting Home Service.');
-        setStep(technicianStep);
+        setStep(TECHNICIAN_STEP);
         return false;
       }
 
@@ -1648,7 +2068,7 @@
           && String(location && location.barangay ? location.barangay : '').trim();
         if (!hasAddress) {
           setFieldError(null, errorSubmit, 'No saved home address found. Please add one in Address Book before submitting Home Service.');
-          setStep(addressStep);
+          setStep(ADDRESS_STEP);
           return false;
         }
       }
@@ -1663,6 +2083,16 @@
         selectedOptionValue = installationOption;
       }
 
+      const selectedTechnicianUid = bookingType === 'technician'
+        ? String(selectedTechnician && (selectedTechnician.uid || selectedTechnician.id) ? (selectedTechnician.uid || selectedTechnician.id) : '').trim()
+        : '';
+      const selectedTechnicianEmail = bookingType === 'technician'
+        ? String(selectedTechnician && selectedTechnician.email ? selectedTechnician.email : '').trim().toLowerCase()
+        : '';
+      const selectedTechnicianName = bookingType === 'technician'
+        ? String(selectedTechnician && selectedTechnician.name ? selectedTechnician.name : '').trim()
+        : '';
+
       const payload = {
         customerId: activeUid,
         bookingType,
@@ -1673,6 +2103,12 @@
         issue,
         description: issue,
         deviceType: serviceName,
+        assignedTechnicianId: selectedTechnicianUid,
+        technicianId: selectedTechnicianUid,
+        assignedTechnicianEmail: selectedTechnicianEmail,
+        technicianEmail: selectedTechnicianEmail,
+        assignedTechnicianName: selectedTechnicianName,
+        technicianName: selectedTechnicianName,
         preferredDate: schedulePayload.preferredDate,
         preferredTime: schedulePayload.preferredTime,
         requestDetails: {
@@ -1681,27 +2117,17 @@
           category: formatCategoryLabel(category),
           selectedOptionLabel,
           selectedOptionValue,
-          selectedTechnicianName: selectedTechnician ? selectedTechnician.name : '',
-          selectedTechnicianId: selectedTechnician ? selectedTechnician.id : '',
+          selectedTechnicianName,
+          selectedTechnicianId: selectedTechnicianUid,
+          selectedTechnicianEmail,
           additionalInfo: issue,
           issue
         },
         media: uploadedMedia,
         location,
         requestMode: bookingType === 'appointment' ? 'drop-off-store' : 'home-service',
-        status: bookingType === 'technician' ? 'offered' : 'pending'
+        status: 'pending'
       };
-
-      if (bookingType === 'technician' && selectedTechnician) {
-        const techId = String(selectedTechnician.id || '').trim();
-        const techEmail = String(selectedTechnician.email || '').trim();
-        const techName = String(selectedTechnician.name || '').trim();
-        payload.assignedTechnicianId = techId;
-        payload.technicianId = techId;
-        payload.assignedTechnicianEmail = techEmail;
-        payload.technicianEmail = techEmail;
-        payload.assignedTechnicianName = techName;
-      }
 
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
       const requestId = await usersDb.addBookingRequest(payload);
@@ -1712,11 +2138,16 @@
         });
       }
       sessionStorage.removeItem(DRAFT_KEY);
-      setStep(submittedStep);
+      setStep(SUBMITTED_STEP);
       return true;
     } catch (err) {
       const code = String((err && err.code) || '').toLowerCase();
       let msg = err && err.message ? err.message : 'Failed to submit request. Please try again.';
+      if (code.includes('slot-unavailable') || code.includes('booking/slot')) {
+        msg = 'That schedule is already booked. Please choose another time slot.';
+        setStep(SCHEDULE_STEP);
+        refreshBlockedScheduleSlots();
+      }
       if (code.includes('permission-denied')) {
         msg = 'Unable to submit request right now (permission denied).';
       } else if (code.includes('unauthenticated')) {
@@ -1731,9 +2162,9 @@
       return false;
     } finally {
       isSubmitting = false;
-      if (nextBtn && currentStep !== submittedStep) {
+      if (nextBtn && currentStep !== SUBMITTED_STEP) {
         nextBtn.disabled = false;
-        nextBtn.textContent = currentStep === summaryStep ? 'SUBMIT REQUEST' : nextBtn.textContent;
+        nextBtn.textContent = currentStep === SUMMARY_STEP ? 'SUBMIT REQUEST' : nextBtn.textContent;
       }
     }
   }
@@ -1933,16 +2364,23 @@
 
   if (backBtn) {
     backBtn.addEventListener('click', (event) => {
-      const isHomeServiceFlow = requestedType === 'technician';
-      const technicianStep = 4;
-      const summaryStep = isHomeServiceFlow ? 5 : 3;
-      const submittedStep = isHomeServiceFlow ? 6 : 4;
-      if (currentStep === 1 || currentStep === submittedStep) return;
+      if (currentStep === 1 || currentStep === SUBMITTED_STEP) return;
       event.preventDefault();
-      if (currentStep === 2) setStep(1);
-      if (currentStep === 3) setStep(2);
-      if (isHomeServiceFlow && currentStep === technicianStep) setStep(3);
-      if (currentStep === summaryStep) setStep(isHomeServiceFlow ? technicianStep : 2);
+      if (currentStep === SCHEDULE_STEP) {
+        setStep(IS_HOME_SERVICE_FLOW ? TECHNICIAN_STEP : 1);
+        return;
+      }
+      if (IS_HOME_SERVICE_FLOW && currentStep === TECHNICIAN_STEP) {
+        setStep(ADDRESS_STEP);
+        return;
+      }
+      if (IS_HOME_SERVICE_FLOW && currentStep === ADDRESS_STEP) {
+        setStep(1);
+        return;
+      }
+      if (currentStep === SUMMARY_STEP) {
+        setStep(SCHEDULE_STEP);
+      }
     });
   }
 
@@ -1956,16 +2394,69 @@
     });
   }
 
-  if (requestTechnicianSelect) {
-    requestTechnicianSelect.addEventListener('change', () => {
-      selectedTechnicianId = String(requestTechnicianSelect.value || '').trim();
+  if (requestTechnicianList) {
+    requestTechnicianList.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (target.name !== 'request_selected_technician') return;
+      selectedTechnicianId = String(target.value || '').trim();
       if (errorRequestTechnician) errorRequestTechnician.textContent = '';
+      renderTechnicianOptions(availableTechnicians);
+      if (currentStep === SCHEDULE_STEP) {
+        refreshBlockedScheduleSlots();
+      }
     });
   }
 
   if (confirmTerms) {
     confirmTerms.addEventListener('change', () => {
       if (errorTerms) errorTerms.textContent = '';
+      if (confirmTerms.checked) {
+        setTermsReadStatus('', true);
+      } else if (confirmTerms.disabled) {
+        setTermsReadStatus('Read the terms first, then confirm to submit your request.', false);
+      } else {
+        setTermsReadStatus('Please check the box to continue with submission.', false);
+      }
+    });
+  }
+
+  if (openTermsBtn) {
+    openTermsBtn.addEventListener('click', () => {
+      if (errorTerms) errorTerms.textContent = '';
+      openTermsModal();
+    });
+  }
+
+  if (termsScrollBox) {
+    termsScrollBox.addEventListener('scroll', () => {
+      updateTermsScrollState();
+    });
+  }
+
+  if (termsProceedBtn) {
+    termsProceedBtn.addEventListener('click', () => {
+      if (!hasScrolledTermsToEnd) return;
+      if (confirmTerms) {
+        confirmTerms.disabled = false;
+        confirmTerms.checked = true;
+        confirmTerms.dispatchEvent(new Event('change'));
+      }
+      closeTermsModal();
+    });
+  }
+
+  if (termsCloseBtn) {
+    termsCloseBtn.addEventListener('click', () => {
+      closeTermsModal();
+    });
+  }
+
+  if (termsModal) {
+    termsModal.addEventListener('click', (event) => {
+      if (event.target === termsModal) {
+        closeTermsModal();
+      }
     });
   }
 
@@ -2034,6 +2525,10 @@
         setFieldError(requestAddressAdditionalDetails, errorRequestAddressAdd, 'Additional details must include readable text.');
         if (typeof requestAddressAdditionalDetails.focus === 'function') requestAddressAdditionalDetails.focus();
         return;
+      } else if (!isValidDetailsTextFormat(additionalDetails)) {
+        setFieldError(requestAddressAdditionalDetails, errorRequestAddressAdd, 'Additional details/landmark can only use letters, numbers, spaces, commas, and hyphens.');
+        if (typeof requestAddressAdditionalDetails.focus === 'function') requestAddressAdditionalDetails.focus();
+        return;
       } else if (additionalDetails.length < MIN_ADDRESS_LANDMARK_LENGTH || additionalDetails.length > MAX_ADDRESS_LANDMARK_LENGTH) {
         setFieldError(requestAddressAdditionalDetails, errorRequestAddressAdd, `Additional details/landmark must be ${MIN_ADDRESS_LANDMARK_LENGTH}-${MAX_ADDRESS_LANDMARK_LENGTH} characters.`);
         if (typeof requestAddressAdditionalDetails.focus === 'function') requestAddressAdditionalDetails.focus();
@@ -2067,41 +2562,36 @@
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const isHomeServiceFlow = requestedType === 'technician';
-    const technicianStep = 4;
-    const summaryStep = isHomeServiceFlow ? 5 : 3;
-    const submittedStep = isHomeServiceFlow ? 6 : 4;
-
     if (currentStep === 1) {
       if (!validateStep1()) return;
-      setStep(2);
+      setStep(IS_HOME_SERVICE_FLOW ? ADDRESS_STEP : SCHEDULE_STEP);
       return;
     }
 
-    if (currentStep === 2) {
-      if (!validateStep2()) return;
-      setStep(3);
-      return;
-    }
-
-    if (isHomeServiceFlow && currentStep === 3) {
+    if (IS_HOME_SERVICE_FLOW && currentStep === ADDRESS_STEP) {
       if (!validateStep3Address()) return;
-      setStep(technicianStep);
+      setStep(TECHNICIAN_STEP);
       return;
     }
 
-    if (isHomeServiceFlow && currentStep === technicianStep) {
+    if (IS_HOME_SERVICE_FLOW && currentStep === TECHNICIAN_STEP) {
       if (!validateStep4Technician()) return;
-      setStep(summaryStep);
+      setStep(SCHEDULE_STEP);
       return;
     }
 
-    if (currentStep === summaryStep) {
+    if (currentStep === SCHEDULE_STEP) {
+      if (!validateStep2()) return;
+      setStep(SUMMARY_STEP);
+      return;
+    }
+
+    if (currentStep === SUMMARY_STEP) {
       await submitRequest();
       return;
     }
 
-    if (currentStep === submittedStep) {
+    if (currentStep === SUBMITTED_STEP) {
       window.location.href = 'pending.html';
     }
   });
@@ -2112,6 +2602,11 @@
   renderSlots();
   syncPreferredText();
   renderMediaPreview();
+  if (confirmTerms) {
+    confirmTerms.checked = false;
+    confirmTerms.disabled = true;
+    confirmTerms.dispatchEvent(new Event('change'));
+  }
   setStep(1);
   };
 })();

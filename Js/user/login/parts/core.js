@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const ns = window.hfsLogin || {};
+  const loginForm = document.getElementById('loginForm');
   const emailInput = document.getElementById('email');
   const passwordInput = document.getElementById('password');
   const loginBtn = document.getElementById('loginBtn') || document.querySelector('.btn');
@@ -21,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (loginBtn) {
       loginBtn.disabled = true;
-      loginBtn.textContent = 'LOGGING IN...';
+      loginBtn.textContent = 'Logging In...';
     }
 
     try {
@@ -29,14 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       if (loginBtn) {
         loginBtn.disabled = false;
-        loginBtn.textContent = 'LOG IN';
+        loginBtn.textContent = 'Log In';
       }
     }
   }
 
-  if (loginBtn) {
+  if (loginForm) {
+    loginForm.addEventListener('submit', submitLogin);
+  } else if (loginBtn) {
     loginBtn.addEventListener('click', submitLogin);
   }
+
+  if (loginForm) return;
 
   [emailInput, passwordInput].forEach((input) => {
     if (!input) return;

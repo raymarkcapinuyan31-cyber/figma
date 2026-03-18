@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Messages - HomeFixSolution</title>
   <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
-  <link rel="stylesheet" href="../../css/user/pages/messages/index.css?v=20260310a">
+  <link rel="stylesheet" href="../../css/user/pages/messages/index.css?v=20260312d">
   <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
 <body>
@@ -64,7 +64,12 @@
               <div class="messages-conversation" id="messagesConversation" hidden>
                 <div class="messages-head">
                   <strong id="messagesRequestTitle">Request</strong>
-                  <span id="messagesRequestMeta">Accepted request</span>
+                  <div class="messages-head-actions">
+                    <span id="messagesRequestMeta">Accepted request</span>
+                    <button type="button" class="messages-report-btn" id="messagesReportBtn" disabled aria-label="Report technician" title="Report technician">
+                      <span class="messages-report-icon" aria-hidden="true">!</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="messages-assigned-tech" id="messagesAssignedTech">Assigned Technician: -</div>
                 <div class="messages-list" id="messagesList">
@@ -85,6 +90,59 @@
     </div>
   </div>
 
+  <div class="messages-report-modal" id="reportModal" hidden>
+    <div class="messages-report-card" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
+      <div class="messages-report-head">
+        <h2 id="reportModalTitle">Report Technician</h2>
+        <button type="button" class="messages-report-close" id="reportModalCloseBtn" aria-label="Close report form">x</button>
+      </div>
+      <form id="reportForm" class="messages-report-form" novalidate>
+        <label for="reportReasonSelect">Reason</label>
+        <select id="reportReasonSelect" required>
+          <option value="" selected>Select a reason</option>
+          <option value="No-show">No-show</option>
+          <option value="Late without notice">Late without notice</option>
+          <option value="Unprofessional behavior">Unprofessional behavior</option>
+          <option value="Poor service quality">Poor service quality</option>
+          <option value="Overpricing or unexpected charges">Overpricing or unexpected charges</option>
+          <option value="Others">Others</option>
+        </select>
+
+        <label for="reportReasonOther" id="reportReasonOtherLabel" hidden>Other reason</label>
+        <input type="text" id="reportReasonOther" maxlength="120" placeholder="Type other reason" hidden>
+
+        <label for="reportExplanation">Explanation</label>
+        <textarea id="reportExplanation" rows="4" maxlength="1000" placeholder="Please explain what happened..."></textarea>
+
+        <p class="messages-report-error" id="reportFormError" role="alert" aria-live="polite"></p>
+
+        <div class="messages-report-actions">
+          <button type="button" class="messages-report-cancel" id="reportCancelBtn">Cancel</button>
+          <button type="submit" class="messages-report-submit" id="reportSubmitBtn">Submit Report</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="messages-report-success" id="reportSuccessModal" hidden>
+    <div class="messages-report-success-card" role="dialog" aria-modal="true" aria-labelledby="reportSuccessTitle">
+      <h3 id="reportSuccessTitle">Report Submitted</h3>
+      <p>Your report was sent to admin successfully.</p>
+      <button type="button" class="messages-report-success-btn" id="reportSuccessOkBtn">OK</button>
+    </div>
+  </div>
+
+  <div class="messages-report-success" id="reportConfirmModal" hidden>
+    <div class="messages-report-success-card" role="dialog" aria-modal="true" aria-labelledby="reportConfirmTitle">
+      <h3 id="reportConfirmTitle">Confirm Report</h3>
+      <p>Submit this report to admin?</p>
+      <div class="messages-report-actions messages-report-confirm-actions">
+        <button type="button" class="messages-report-cancel" id="reportConfirmCancelBtn">Cancel</button>
+        <button type="button" class="messages-report-submit" id="reportConfirmOkBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -92,7 +150,7 @@
   <script src="../../firebase/config/firebase-config.js"></script>
   <script src="../../databasehfs/users/core.js?v=20260304a"></script>
   <script src="../../databasehfs/users/user-profile-database.js"></script>
-  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
   <script src="../../databasehfs/users/user-database.js"></script>
   <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
   <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
@@ -104,7 +162,7 @@
   <script src="../../Js/user/side-panel/buttons/security.js"></script>
   <script src="../../Js/user/side-panel/buttons/about.js"></script>
   <script src="../../Js/user/side-panel/buttons/logout.js"></script>
-  <script src="../../Js/user/messages/parts/core.js?v=20260310a"></script>
+  <script src="../../Js/user/messages/parts/core.js?v=20260312d"></script>
   <script src="../../Js/user/messages/index.js?v=20260309a"></script>
 </body>
 </html>

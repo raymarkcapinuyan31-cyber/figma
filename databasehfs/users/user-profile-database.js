@@ -106,6 +106,30 @@
       .join(' ');
   }
 
+  function normalizeFreeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isValidAddressAdditionalDetails(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
+  }
+
+  function normalizeAddressPayload(rawAddress) {
+    const address = rawAddress && typeof rawAddress === 'object' ? Object.assign({}, rawAddress) : {};
+    const additionalDetails = normalizeFreeText(address.additionalDetails);
+    if (additionalDetails && !isValidAddressAdditionalDetails(additionalDetails)) {
+      const err = new Error('Address landmark/details can only use letters, numbers, spaces, commas, and hyphens.');
+      err.code = 'validation/invalid-address-details';
+      throw err;
+    }
+
+    address.houseUnit = normalizeFreeText(address.houseUnit);
+    address.streetName = normalizeFreeText(address.streetName);
+    address.barangay = String(address.barangay || '').trim();
+    address.additionalDetails = additionalDetails;
+    return address;
+  }
+
   function toStableCodeDigits(source) {
     const text = String(source || '').trim();
     if (!text) return '00000';
@@ -936,6 +960,7 @@
     },
 
     async saveAddress(userId, address) {
+      const normalizedAddress = normalizeAddressPayload(address);
       if (core.mode === 'firebase') {
         if (hasRealtimeDatabase()) {
           const rtdb = getRealtimeDb();
@@ -948,7 +973,7 @@
           const userRef = rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUserId}`);
 
           const ref = userRef.child('addresses').push();
-          await ref.set(Object.assign({}, address, { createdAt: getDbTimestamp() }));
+          await ref.set(Object.assign({}, normalizedAddress, { createdAt: getDbTimestamp() }));
           invalidateRealtimeLookupCache(cleanUserId, currentEmail);
           return ref.key;
         }
@@ -968,7 +993,7 @@
             updatedAt: core.firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
         }
-        const payload = Object.assign({}, address, {
+        const payload = Object.assign({}, normalizedAddress, {
           createdAt: core.firebase.firestore.FieldValue.serverTimestamp()
         });
         const ref = await userRef.collection('addresses').add(payload);
@@ -981,7 +1006,7 @@
       if (!users[userId]) return null;
       const addressId = 'a_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
       users[userId].addresses = users[userId].addresses || [];
-      users[userId].addresses.push(Object.assign({ id: addressId, createdAt: core.nowIso() }, address));
+      users[userId].addresses.push(Object.assign({ id: addressId, createdAt: core.nowIso() }, normalizedAddress));
       users[userId].updatedAt = core.nowIso();
       core.writeJson(core.STORAGE_KEYS.users, users);
       return addressId;
@@ -992,7 +1017,6 @@
         if (hasRealtimeDatabase()) {
           const rtdb = getRealtimeDb();
           const cleanUserId = String(userId || '').trim();
-          await ensureCustomerRootInRealtime(rtdb, cleanUserId);
           const snapshot = await rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUserId}/addresses`).once('value');
           const raw = snapshot.val() || {};
           const items = Object.keys(raw).map((id) => {
@@ -1025,19 +1049,20 @@
     },
 
     async updateAddress(userId, addressId, address) {
+      const normalizedAddress = normalizeAddressPayload(address);
       if (core.mode === 'firebase') {
         if (hasRealtimeDatabase()) {
           const rtdb = getRealtimeDb();
           const cleanUserId = String(userId || '').trim();
           await ensureCustomerRootInRealtime(rtdb, cleanUserId);
           const ref = rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUserId}/addresses/${String(addressId || '').trim()}`);
-          await ref.update(Object.assign({}, address, { updatedAt: getDbTimestamp() }));
+          await ref.update(Object.assign({}, normalizedAddress, { updatedAt: getDbTimestamp() }));
           return true;
         }
 
         const db = core.firebase.firestore();
         const resolved = await resolveUserDoc(db, userId);
-        const payload = Object.assign({}, address, {
+        const payload = Object.assign({}, normalizedAddress, {
           updatedAt: core.firebase.firestore.FieldValue.serverTimestamp()
         });
         await resolved.ref.collection('addresses').doc(addressId).set(payload, { merge: true });
@@ -1050,7 +1075,7 @@
       if (!users[userId] || !Array.isArray(users[userId].addresses)) return false;
       const targetIndex = users[userId].addresses.findIndex((item) => item.id === addressId);
       if (targetIndex < 0) return false;
-      users[userId].addresses[targetIndex] = Object.assign({}, users[userId].addresses[targetIndex], address, { updatedAt: core.nowIso() });
+      users[userId].addresses[targetIndex] = Object.assign({}, users[userId].addresses[targetIndex], normalizedAddress, { updatedAt: core.nowIso() });
       users[userId].updatedAt = core.nowIso();
       core.writeJson(core.STORAGE_KEYS.users, users);
       return true;
@@ -1133,6 +1158,38 @@
         }
       }
 
+      async function sendVerificationEmail(user, withContinueUrl) {
+        if (!user || typeof user.sendEmailVerification !== 'function') {
+          const err = new Error('You must be signed in to send email verification.');
+          err.code = 'auth/unauthenticated';
+          throw err;
+        }
+
+        if (withContinueUrl) {
+          try {
+            await user.sendEmailVerification({
+              url: verificationUrl,
+              handleCodeInApp: false
+            });
+            return { usedContinueUrl: true };
+          } catch (err) {
+            const code = String((err && err.code) || '').toLowerCase();
+            if (
+              code.includes('unauthorized-continue-uri')
+              || code.includes('invalid-continue-uri')
+              || code.includes('missing-continue-uri')
+            ) {
+              await user.sendEmailVerification();
+              return { usedContinueUrl: false };
+            }
+            throw err;
+          }
+        }
+
+        await user.sendEmailVerification();
+        return { usedContinueUrl: false };
+      }
+
       if (requestId && canUseContinueUrl) {
         try {
           const urlObj = new URL(verificationUrl, window.location.origin);
@@ -1148,10 +1205,7 @@
         const signedInEmail = core.normalizeEmail(core.auth.currentUser && core.auth.currentUser.email ? core.auth.currentUser.email : '');
         const alreadySignedInAsTarget = !!core.auth.currentUser && signedInEmail === targetEmail;
         if (alreadySignedInAsTarget) {
-          await core.auth.currentUser.sendEmailVerification({
-            url: verificationUrl,
-            handleCodeInApp: false
-          });
+          const sendResult = await sendVerificationEmail(core.auth.currentUser, true);
           return { ok: true, sent: true, requestTrackingEnabled: false, mode: 'verification-link' };
         }
 
@@ -1161,22 +1215,14 @@
       }
 
       if (canUseContinueUrl) {
-        if (!core.auth.currentUser) {
-          const err = new Error('You must be signed in to send email verification.');
-          err.code = 'auth/unauthenticated';
-          throw err;
-        }
-        await core.auth.currentUser.sendEmailVerification({
-          url: verificationUrl,
-          handleCodeInApp: false
-        });
+        await sendVerificationEmail(core.auth.currentUser, true);
         return { ok: true, sent: true, requestTrackingEnabled: false, mode: 'verification-link' };
       }
 
       if (targetEmail) {
         const refreshedEmail = core.normalizeEmail(core.auth.currentUser && core.auth.currentUser.email ? core.auth.currentUser.email : '');
         if (core.auth.currentUser && refreshedEmail === targetEmail) {
-          await core.auth.currentUser.sendEmailVerification();
+          await sendVerificationEmail(core.auth.currentUser, false);
           return { ok: true, sent: true, requestTrackingEnabled: false, mode: 'verification-link' };
         }
 

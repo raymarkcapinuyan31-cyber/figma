@@ -432,6 +432,25 @@
     return null;
   }
 
+  async function resolveProfileFast(uid, email) {
+    const db = window.usersDatabase;
+    const tasks = [
+      db && typeof db.getUserById === 'function'
+        ? db.getUserById(uid).catch(() => null)
+        : Promise.resolve(null),
+      db && typeof db.getUserByEmail === 'function'
+        ? db.getUserByEmail(email).catch(() => null)
+        : Promise.resolve(null),
+      resolveProfileFromRealtimeRoots(uid, email).catch(() => null)
+    ];
+
+    const [byId, byEmail, byRoots] = await Promise.all(tasks);
+    return {
+      profile: byId || byEmail || byRoots || null,
+      byEmail: byEmail || null
+    };
+  }
+
   ns.handleLogin = async function handleLogin(emailInput, passwordInput) {
     const identifier = (emailInput && emailInput.value ? emailInput.value : '').trim();
     const password = passwordInput && passwordInput.value ? passwordInput.value : '';
@@ -461,10 +480,7 @@
       }
 
       // Non-blocking: admin demo access should still proceed even when Firebase auth bootstrap fails.
-      try {
-        await ensureDemoAdminFirebaseSession();
-      } catch (_) {
-      }
+      ensureDemoAdminFirebaseSession().catch(() => {});
 
       try {
         sessionStorage.setItem(ADMIN_DEMO_SESSION_KEY, JSON.stringify({
@@ -475,12 +491,12 @@
       } catch (_) {
       }
 
-      await startRoleSession({
+      startRoleSession({
         role: 'admin',
         email: ADMIN_DEMO_USERNAME,
         name: ADMIN_DEMO_USERNAME,
         source: 'demo-login'
-      });
+      }).catch(() => {});
 
       window.location.href = 'html/admin/dashboard.html';
       return;
@@ -505,12 +521,12 @@
       } catch (_) {
       }
 
-      await startRoleSession({
+      startRoleSession({
         role: 'technician',
         email: TECHNICIAN_DEMO_EMAIL,
         name: 'Technician',
         source: 'demo-login'
-      });
+      }).catch(() => {});
 
       window.location.href = getTechnicianLandingPath({
         email: TECHNICIAN_DEMO_EMAIL,
@@ -532,41 +548,24 @@
       const authUid = String(authUser && authUser.uid ? authUser.uid : '').trim();
       const effectiveEmail = String(authUser && authUser.email ? authUser.email : authEmail);
 
-      let profile = null;
-      try {
-        profile = await window.usersDatabase.getUserById(authUid);
-      } catch (_) {
-      }
+      const resolvedProfile = await resolveProfileFast(authUid, effectiveEmail);
+      let profile = resolvedProfile.profile;
 
-      if (!profile && typeof window.usersDatabase.getUserByEmail === 'function') {
-        try {
-          const byEmail = await window.usersDatabase.getUserByEmail(effectiveEmail);
-          if (byEmail) {
-            const resolvedRole = String(byEmail.role || '').toLowerCase();
-            profile = Object.assign({}, byEmail, { uid: authUid, email: effectiveEmail });
-
-            if ((resolvedRole === 'technician' || resolvedRole === 'admin') && typeof window.usersDatabase.updateUserProfile === 'function') {
-              await window.usersDatabase.updateUserProfile(authUid, {
-                uid: authUid,
-                email: effectiveEmail,
-                first_name: String(byEmail.first_name || '').trim(),
-                middle_name: String(byEmail.middle_name || '').trim(),
-                last_name: String(byEmail.last_name || '').trim(),
-                role: resolvedRole,
-                isActive: byEmail.isActive !== false,
-                isVerified: true,
-                emailVerified: true
-              });
-            }
-          }
-        } catch (_) {
-        }
-      }
-
-      if (!profile) {
-        try {
-          profile = await resolveProfileFromRealtimeRoots(authUid, effectiveEmail);
-        } catch (_) {
+      if (resolvedProfile.byEmail && typeof window.usersDatabase.updateUserProfile === 'function') {
+        const byEmail = resolvedProfile.byEmail;
+        const resolvedRole = String(byEmail.role || '').toLowerCase();
+        if (resolvedRole === 'technician' || resolvedRole === 'admin') {
+          window.usersDatabase.updateUserProfile(authUid, {
+            uid: authUid,
+            email: effectiveEmail,
+            first_name: String(byEmail.first_name || '').trim(),
+            middle_name: String(byEmail.middle_name || '').trim(),
+            last_name: String(byEmail.last_name || '').trim(),
+            role: resolvedRole,
+            isActive: byEmail.isActive !== false,
+            isVerified: true,
+            emailVerified: true
+          }).catch(() => {});
         }
       }
 
@@ -580,7 +579,13 @@
         return;
       }
 
-      profile = await enforceTechnicianAccount(authUid, effectiveEmail, profile);
+      const normalizedLoginEmail = normalizeLower(effectiveEmail);
+      const currentRole = String(profile && profile.role ? profile.role : '').toLowerCase();
+      if (FORCED_TECHNICIAN_EMAILS.has(normalizedLoginEmail) && currentRole !== 'technician') {
+        profile = await enforceTechnicianAccount(authUid, effectiveEmail, profile);
+      } else if (FORCED_TECHNICIAN_EMAILS.has(normalizedLoginEmail)) {
+        enforceTechnicianAccount(authUid, effectiveEmail, profile).catch(() => {});
+      }
 
       saveProfileCache(profile, authUser);
 
@@ -626,36 +631,36 @@
       }
 
       if (role === 'admin') {
-        await startRoleSession({
+        startRoleSession({
           role: 'admin',
           uid: authUid,
           email: effectiveEmail,
           name: [profile && profile.first_name, profile && profile.last_name].filter(Boolean).join(' ').trim() || effectiveEmail,
           source: 'firebase-login'
-        });
+        }).catch(() => {});
         window.location.href = 'html/admin/dashboard.html';
         return;
       }
 
       if (role === 'technician') {
-        await startRoleSession({
+        startRoleSession({
           role: 'technician',
           uid: authUid,
           email: effectiveEmail,
           name: [profile && profile.first_name, profile && profile.last_name].filter(Boolean).join(' ').trim() || effectiveEmail,
           source: 'firebase-login'
-        });
+        }).catch(() => {});
         window.location.href = getTechnicianLandingPath(profile);
         return;
       }
 
-      await startRoleSession({
+      startRoleSession({
         role: 'customer',
         uid: authUid,
         email: effectiveEmail,
         name: [profile && profile.first_name, profile && profile.last_name].filter(Boolean).join(' ').trim() || effectiveEmail,
         source: 'firebase-login'
-      });
+      }).catch(() => {});
 
       window.location.href = 'html/user/dashboard.html';
     } catch (err) {
@@ -671,13 +676,13 @@
               const bootstrapped = await tryBootstrapExistingTechnician(authEmail, password);
               if (bootstrapped && bootstrapped.authUser) {
                 saveProfileCache(bootstrapped.profile, bootstrapped.authUser);
-                await startRoleSession({
+                startRoleSession({
                   role: 'technician',
                   uid: bootstrapped.authUser.uid,
                   email: authEmail,
                   name: [bootstrapped.profile && bootstrapped.profile.first_name, bootstrapped.profile && bootstrapped.profile.last_name].filter(Boolean).join(' ').trim() || authEmail,
                   source: 'bootstrap-login'
-                });
+                }).catch(() => {});
                 window.location.href = getTechnicianLandingPath(bootstrapped.profile);
                 return;
               }

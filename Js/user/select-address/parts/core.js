@@ -36,6 +36,14 @@ document.addEventListener('DOMContentLoaded', () => {
       .replaceAll("'", '&#039;');
   }
 
+  function normalizeFreeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isValidAdditionalDetailsFormat(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
+  }
+
   function toRequestDisplayId(rawId) {
     const source = String(rawId || '').trim();
     if (!source) return 'N/A';
@@ -187,10 +195,10 @@ document.addEventListener('DOMContentLoaded', () => {
     quickSaveBtn.addEventListener('click', async () => {
       if (!activeUser) return;
 
-      const houseUnit = String(quickHouse && quickHouse.value ? quickHouse.value : '').trim();
-      const streetName = String(quickStreet && quickStreet.value ? quickStreet.value : '').trim();
+      const houseUnit = normalizeFreeText(quickHouse && quickHouse.value ? quickHouse.value : '');
+      const streetName = normalizeFreeText(quickStreet && quickStreet.value ? quickStreet.value : '');
       const barangay = String(quickBarangay && quickBarangay.value ? quickBarangay.value : '').trim();
-      const additionalDetails = String(quickAdditionalDetails && quickAdditionalDetails.value ? quickAdditionalDetails.value : '').trim();
+      const additionalDetails = normalizeFreeText(quickAdditionalDetails && quickAdditionalDetails.value ? quickAdditionalDetails.value : '');
 
       if (quickError) quickError.textContent = '';
 
@@ -198,6 +206,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (quickError) quickError.textContent = 'Please complete house/unit, street, and barangay.';
         return;
       }
+
+      if (additionalDetails && !isValidAdditionalDetailsFormat(additionalDetails)) {
+        if (quickError) quickError.textContent = 'Landmark/details can only use letters, numbers, spaces, commas, and hyphens.';
+        if (quickAdditionalDetails && typeof quickAdditionalDetails.focus === 'function') quickAdditionalDetails.focus();
+        return;
+      }
+
+      if (quickHouse) quickHouse.value = houseUnit;
+      if (quickStreet) quickStreet.value = streetName;
+      if (quickAdditionalDetails) quickAdditionalDetails.value = additionalDetails;
 
       quickSaveBtn.disabled = true;
       quickSaveBtn.textContent = 'SAVING...';

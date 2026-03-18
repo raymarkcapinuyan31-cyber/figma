@@ -207,7 +207,7 @@
                     initialDecisionMade = true;
                     callback(null);
                   }
-                }, 900);
+                }, 250);
                 return;
               }
 
@@ -228,9 +228,16 @@
       }
       mode = 'firebase';
     } catch (error) {
-      mode = 'local';
-      auth = localAuth;
-      console.warn('Firebase init failed; using local fallback mode.', error && error.message ? error.message : error);
+      if (forceFirebaseOnly) {
+        mode = 'firebase-required';
+        firebaseRef = null;
+        auth = null;
+        console.error('Firebase init failed while Firebase-only mode is enabled.', error && error.message ? error.message : error);
+      } else {
+        mode = 'local';
+        auth = localAuth;
+        console.warn('Firebase init failed; using local fallback mode.', error && error.message ? error.message : error);
+      }
     }
   } else {
     if (forceFirebaseOnly) {

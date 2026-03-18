@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const recentItemMap = new Map();
   let latestOverviewItems = [];
   let unsubscribeOverviewBookings = null;
-  const RECENT_REQUEST_LIMIT = 4;
+  const RECENT_REQUEST_LIMIT = 3;
 
   const homeCard = document.querySelector('.home-card');
   if (homeCard) homeCard.scrollTop = 0;
@@ -275,8 +275,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const sorted = [...items].sort((a, b) => {
-      const left = toDateValue(a && a.createdAt);
-      const right = toDateValue(b && b.createdAt);
+      const left = getRequestedDate(a);
+      const right = getRequestedDate(b);
       return (right ? right.getTime() : 0) - (left ? left.getTime() : 0);
     }).slice(0, RECENT_REQUEST_LIMIT);
 

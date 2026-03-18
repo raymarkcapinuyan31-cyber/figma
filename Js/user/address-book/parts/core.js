@@ -99,23 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function bootstrapRender(triesLeft) {
-    const initialUser = ns.resolveInitialUser();
-    if (initialUser && initialUser.uid) {
-      activeUser = initialUser;
-      await render();
-      return;
-    }
-
-    await render();
-
-    if (triesLeft <= 0) return;
-    setTimeout(() => {
-      bootstrapRender(triesLeft - 1);
-    }, 700);
+  const initialUser = ns.resolveInitialUser();
+  if (initialUser && initialUser.uid) {
+    activeUser = initialUser;
   }
-
-  bootstrapRender(8);
+  void render();
 
   if (addNewBtn) {
     addNewBtn.addEventListener('click', () => {

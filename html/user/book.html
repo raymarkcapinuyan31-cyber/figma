@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="../../css/user/pages/book/index.css">
   <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
-<body>
+<body class="dashboard-home-page book-page">
   <div class="app-shell">
     <header class="topbar">
       <div class="topbar-left">
@@ -48,17 +48,26 @@
 
       <main class="content">
         <section class="home-card book-type-card">
-          <h1>SELECT SERVICE MODE</h1>
+          <div class="book-type-hero">
+            <p class="book-type-kicker">Book a Service</p>
+            <h1>Select Service Mode</h1>
+          </div>
 
           <form class="book-type-form" id="serviceTypeForm" novalidate>
             <div class="booking-type-box" id="bookingTypeBox">
               <label class="booking-type-option">
                 <input type="radio" name="booking_type" value="appointment">
-                <span>Drop-Off at Store</span>
+                <span>
+                  <strong>Drop-Off at Store</strong>
+                  <small>Bring your item to the shop for assessment and repair.</small>
+                </span>
               </label>
               <label class="booking-type-option">
                 <input type="radio" name="booking_type" value="technician">
-                <span>Home Service</span>
+                <span>
+                  <strong>Home Service</strong>
+                  <small>A technician will come to your home.</small>
+                </span>
               </label>
             </div>
             <div class="field-error" id="error-bookingType"></div>

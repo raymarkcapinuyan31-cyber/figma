@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="g" x1="124" y1="84" x2="378" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9b9ea3"/>
+      <stop offset="1" stop-color="#7e8287"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Thick circular body with top-right gap -->
+  <path
+    d="M340.8 134.2A178 178 0 1 0 434 290"
+    stroke="url(#g)"
+    stroke-width="48"
+    stroke-linecap="butt"
+  />
+
+  <!-- Arrow head at top-right -->
+  <path
+    d="M258 54 L376 140 L258 226 Z"
+    fill="url(#g)"
+  />
+</svg>

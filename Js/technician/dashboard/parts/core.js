@@ -88,7 +88,7 @@
       if (!seenAuthenticatedUser) {
         ns.redirectToLogin();
       }
-    }, 3000);
+    }, 1200);
 
     usersDb.auth.onAuthStateChanged(async (user) => {
       if (!user) {
@@ -101,25 +101,28 @@
        clearTimeout(initialAuthTimeout);
 
       try {
-        let profile = await usersDb.getUserById(user.uid);
-        if ((!profile || !profile.role) && user.email && typeof usersDb.getUserByEmail === 'function') {
-          const byEmail = await usersDb.getUserByEmail(user.email);
-          if (byEmail) {
-            profile = Object.assign({}, profile, byEmail, { uid: user.uid, email: user.email || byEmail.email || '' });
-            const byEmailRole = String(byEmail.role || '').trim().toLowerCase();
-            if ((byEmailRole === 'technician' || byEmailRole === 'admin') && typeof usersDb.updateUserProfile === 'function') {
-              await usersDb.updateUserProfile(user.uid, {
-                uid: user.uid,
-                email: String(user.email || byEmail.email || '').trim().toLowerCase(),
-                first_name: String(byEmail.first_name || '').trim(),
-                middle_name: String(byEmail.middle_name || '').trim(),
-                last_name: String(byEmail.last_name || '').trim(),
-                role: byEmailRole,
-                isActive: byEmail.isActive !== false,
-                isVerified: true,
-                emailVerified: true
-              });
-            }
+        const [profileById, profileByEmail] = await Promise.all([
+          typeof usersDb.getUserById === 'function' ? usersDb.getUserById(user.uid).catch(() => null) : Promise.resolve(null),
+          (user.email && typeof usersDb.getUserByEmail === 'function') ? usersDb.getUserByEmail(user.email).catch(() => null) : Promise.resolve(null)
+        ]);
+
+        let profile = profileById || null;
+        if ((!profile || !profile.role) && profileByEmail) {
+          const byEmail = profileByEmail;
+          profile = Object.assign({}, profile, byEmail, { uid: user.uid, email: user.email || byEmail.email || '' });
+          const byEmailRole = String(byEmail.role || '').trim().toLowerCase();
+          if ((byEmailRole === 'technician' || byEmailRole === 'admin') && typeof usersDb.updateUserProfile === 'function') {
+            usersDb.updateUserProfile(user.uid, {
+              uid: user.uid,
+              email: String(user.email || byEmail.email || '').trim().toLowerCase(),
+              first_name: String(byEmail.first_name || '').trim(),
+              middle_name: String(byEmail.middle_name || '').trim(),
+              last_name: String(byEmail.last_name || '').trim(),
+              role: byEmailRole,
+              isActive: byEmail.isActive !== false,
+              isVerified: true,
+              emailVerified: true
+            }).catch(() => {});
           }
         }
 

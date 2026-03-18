@@ -29,18 +29,14 @@
 .panel-title-overview{margin-top:10px}
 
 .tech-overview{display:flex;flex-direction:column;gap:16px}
-.tech-skills-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #e8ebf1;border-radius:12px;padding:12px 14px}
-.tech-skills-wrap strong{font-size:13px;color:#445363}
-.tech-skills-list{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.tech-skill-chip{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:999px;border:1px solid #cfd9ea;background:#f3f7ff;color:#2a4e8d;font-size:12px;font-weight:700;text-transform:capitalize}
-.tech-overview-stats{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:10px}
-.tech-stat-card{background:#fff;border:1px solid #e8ebf1;border-radius:12px;padding:12px 14px;min-height:90px;display:flex;flex-direction:column;justify-content:space-between}
-.tech-stat-card h3{margin:0;color:#5e6a78;font-size:13px;font-weight:600}
-.tech-stat-card p{margin:8px 0 0;color:#1c2d37;font-size:30px;line-height:1;font-weight:900}
+.tech-overview-stats{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
+.tech-stat-card{background:linear-gradient(165deg,#ffffff 0%,#f3f8ff 100%);border:1px solid #dbe7f6;border-radius:14px;padding:14px 14px;min-height:98px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 8px 18px rgba(20,55,103,0.08)}
+.tech-stat-card h3{margin:0;color:#3f5670;font-size:13px;font-weight:700;letter-spacing:.2px}
+.tech-stat-card p{margin:8px 0 0;color:#13365e;font-size:32px;line-height:1;font-weight:900}
 
-.tech-assigned-wrap{background:#fff;border:1px solid #e8ebf1;border-radius:12px;padding:14px}
+.tech-assigned-wrap{background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border:1px solid #dce8f7;border-radius:14px;padding:14px;box-shadow:0 10px 22px rgba(20,55,103,0.08)}
 .tech-assigned-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
-.tech-assigned-head h2{margin:0;color:#1c2d37;font-size:17px}
+.tech-assigned-head h2{margin:0;color:#163a66;font-size:27px;line-height:1.1}
 .tech-assigned-list{display:flex;flex-direction:column;gap:10px}
 .tech-assigned-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #edf0f5;border-radius:10px;background:#fbfcff}
 .tech-assigned-main{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -48,7 +44,7 @@
 .tech-assigned-main span{font-size:12px;color:#63717f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tech-assigned-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .tech-rating{font-size:12px;font-weight:700;color:#81590b;background:#fff7de;border:1px solid #f1e4b8;border-radius:999px;padding:5px 10px}
-.tech-empty{padding:16px 12px;text-align:center;color:#697482;font-size:14px;background:#fbfcff;border:1px dashed #dce3ee;border-radius:10px}
+.tech-empty{padding:16px 12px;text-align:center;color:#5f7490;font-size:14px;background:#f6faff;border:1px dashed #c8d7eb;border-radius:10px}
 .tech-view-btn{border:1px solid #cfd8eb;background:#fff;color:#2d5076;font-size:12px;font-weight:700;border-radius:999px;padding:5px 10px;cursor:pointer}
 .tech-view-btn:hover{background:#f2f7ff}
 .tech-action-btn{border:1px solid #cfd8eb;background:#fff;color:#2d5076;font-size:12px;font-weight:700;border-radius:999px;padding:5px 10px;cursor:pointer}
@@ -68,16 +64,20 @@
 
 .tech-messages-main{background:#fff;border:1px solid #e1e8f3;border-radius:12px;min-height:440px;display:flex;align-items:stretch;justify-content:stretch}
 .tech-messages-empty{margin:auto;padding:16px;text-align:center;color:#6b7d90;font-size:13px}
-.tech-messages-conversation{width:100%;display:grid;grid-template-rows:auto 1fr auto}
+.tech-messages-conversation{width:100%;display:grid;grid-template-rows:auto auto 1fr auto}
 .tech-messages-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #e8edf7}
 .tech-messages-head strong{font-size:14px;color:#213850}
-.tech-messages-head span{font-size:11px;color:#5f748b}
-.tech-messages-peer-presence{margin:10px 10px 0;padding:7px 10px;border:1px solid #d7e4f4;border-radius:8px;background:linear-gradient(180deg,#f7fbff 0%,#f2f8ff 100%);color:#183b61;font-size:12px;font-weight:700}
+.tech-messages-head span{font-size:10px;color:#5f748b}
+.tech-messages-peer-presence{margin:10px 12px 0;padding:8px 11px;border:1px solid #d2e1f2;border-radius:10px;background:linear-gradient(180deg,#f8fbff 0%,#edf5ff 100%);color:#183b61;font-size:12px;font-weight:700;display:block;width:auto;max-width:none}
 .tech-messages-chat-list{padding:10px;display:flex;flex-direction:column;gap:6px;overflow:auto;max-height:340px}
 .tech-messages-chat-form{display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:10px;border-top:1px solid #e8edf7}
 .tech-messages-chat-form input{min-height:36px;border:1px solid #d5deec;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f3042;background:#fff}
 .tech-messages-chat-form input:focus{outline:none;border-color:#8db0e6;box-shadow:0 0 0 2px rgba(15,73,233,0.08)}
 .tech-messages-chat-form input:disabled{background:#f2f5fb;color:#708299}
+.tech-quick-update-wrap{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px 0}
+.tech-quick-update-btn{border:1px solid #cfe0f3;background:#f4f8ff;color:#21486f;font-size:11px;font-weight:700;line-height:1.2;border-radius:999px;padding:6px 10px;cursor:pointer}
+.tech-quick-update-btn:hover{background:#eaf3ff;border-color:#b9d0ef}
+.tech-quick-update-btn:disabled{opacity:.58;cursor:not-allowed}
 
 .tech-calendar-shell{display:flex;flex-direction:column;gap:12px}
 .tech-calendar-toolbar{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;background:#fff;border:1px solid #e8ebf1;border-radius:12px;padding:10px 12px}
@@ -219,4 +219,8 @@
 	.tech-calendar-title{text-align:left}
 	.tech-account-grid{grid-template-columns:1fr}
 	.tech-skill-options{grid-template-columns:1fr}
+}
+
+@media(max-width:700px){
+	.tech-overview-stats{grid-template-columns:1fr}
 }

@@ -6,22 +6,22 @@
     const raw = String(value || '');
     if (!raw.trim()) return null;
 
-    if (/^\s+|\s+$/.test(raw)) return 'Remove spaces at the start or end.';
-    if (/\s{2,}/.test(raw)) return 'Use only one space between words.';
-    if (/--/.test(raw)) return 'Use only one hyphen between letters.';
+    if (/^\s+|\s+$/.test(raw)) return 'Remove extra spaces.';
+    if (/\s{2,}/.test(raw)) return 'One space only.';
+    if (/--/.test(raw)) return 'One hyphen only.';
 
     const clean = raw.trim();
     if (clean.length < 2 || clean.length > 15) return 'Use 2 to 15 letters.';
 
     const parts = clean.split(' ').filter(Boolean);
     if (parts.length > 1 && parts.every((part) => part.length === 1)) {
-      return 'Enter a full name.';
+      return 'Enter full name.';
     }
 
-    if (/\d/.test(clean)) return 'Do not use numbers.';
+    if (/\d/.test(clean)) return 'No numbers.';
 
     const allowedPattern = /^[A-Za-z\s-]+$/;
-    if (!allowedPattern.test(clean)) return 'Do not use special characters (only hyphen - is allowed).';
+    if (!allowedPattern.test(clean)) return 'No special characters (e.g., Anne-Marie).';
 
     if (!ns.nameRegex.test(clean)) return 'Enter a valid name.';
     return null;

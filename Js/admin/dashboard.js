@@ -29,15 +29,19 @@
 		{ name: 'Zambales', code: '037100000' }
 	];
 	const provinceCityCache = new Map();
-	const ACCEPTED_STATUSES = new Set(['offered', 'accepted', 'confirmed', 'in-progress', 'ongoing', 'completed', 'finished']);
+	const ACCEPTED_STATUSES = new Set(['accepted', 'confirmed', 'in-progress', 'ongoing', 'completed', 'finished']);
 	const CANCELLED_STATUSES = new Set(['cancelled', 'canceled', 'declined', 'rejected']);
+	const SESSION_LOGS_PAGE_SIZE = 10;
 	const state = {
 		accounts: [],
 		sessionPresenceByUid: {},
+		latestCustomerLoginLogIdByUid: {},
 		requests: [],
 		allRequests: [],
 		visibleRequests: [],
+		reports: [],
 		sessionLogs: [],
+		sessionLogsPage: 1,
 		sessionRoleFilter: 'customer',
 		sessionActionFilter: 'login',
 		requestStatusFilter: 'waiting',
@@ -49,6 +53,7 @@
 	let unsubscribeRequests = null;
 	let unsubscribeAccounts = null;
 	let unsubscribeSessionLogs = null;
+	let unsubscribeReports = null;
 	let unsubscribeSessionPresence = [];
 	let requestActionFallbackBound = false;
 
@@ -150,7 +155,7 @@
 		if (auth.currentUser) return auth.currentUser;
 		if (typeof auth.onAuthStateChanged !== 'function') return auth.currentUser || null;
 
-		const waitMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 3000;
+		const waitMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 1200;
 		return new Promise((resolve) => {
 			let settled = false;
 			let unsub = null;
@@ -246,12 +251,38 @@
 		return buildCustomerCodeFromUid(uid) || '-';
 	}
 
+	function buildSessionCodeFromId(sessionId) {
+		const clean = normalizeText(sessionId);
+		if (!clean) return '-';
+		return `S-${toStableCodeDigits(clean)}`;
+	}
+
+	function buildRoleUserCode(uid, role) {
+		const cleanUid = normalizeText(uid);
+		if (!cleanUid) return '-';
+		const normalizedRole = normalizeLower(role);
+		const prefix = normalizedRole === 'technician' ? 'T' : 'C';
+		return `${prefix}-${toStableCodeDigits(cleanUid)}`;
+	}
+
+	function formatTechnicianReference(emailValue, uidValue) {
+		const uid = normalizeText(uidValue);
+		if (uid) return buildRoleUserCode(uid, 'technician');
+
+		const email = normalizeText(emailValue).toLowerCase();
+		if (email && email.includes('@')) {
+			return `T-${toStableCodeDigits(email)}`;
+		}
+
+		return '-';
+	}
+
 	function getSessionUid(item) {
 		return normalizeText(item && item.uid);
 	}
 
 	function getSessionTimestamp(item) {
-		return Number(item && item.createdAt) || 0;
+		return getTimestampFromRecord(item);
 	}
 
 	function getAccountUid(account) {
@@ -299,6 +330,7 @@
 		const recomputePresence = () => {
 			const loginMap = {};
 			const logoutMap = {};
+			const latestCustomerLoginLogIdByUid = {};
 
 			const applyLatest = (items, target) => {
 				(items || []).forEach((item) => {
@@ -316,6 +348,26 @@
 			applyLatest(streams.logoutCustomers, logoutMap);
 			applyLatest(streams.logoutTechnicians, logoutMap);
 
+			(streams.loginCustomers || []).forEach((item) => {
+				const uid = getSessionUid(item);
+				if (!uid) return;
+				const stamp = getSessionTimestamp(item);
+				const currentId = latestCustomerLoginLogIdByUid[uid];
+				if (!currentId) {
+					latestCustomerLoginLogIdByUid[uid] = {
+						stamp,
+						id: normalizeText(item && item.id)
+					};
+					return;
+				}
+				if (stamp >= (Number(currentId.stamp) || 0)) {
+					latestCustomerLoginLogIdByUid[uid] = {
+						stamp,
+						id: normalizeText(item && item.id)
+					};
+				}
+			});
+
 			const presence = {};
 			const allUids = new Set(Object.keys(loginMap).concat(Object.keys(logoutMap)));
 			allUids.forEach((uid) => {
@@ -325,6 +377,13 @@
 			});
 
 			state.sessionPresenceByUid = presence;
+			state.latestCustomerLoginLogIdByUid = Object.keys(latestCustomerLoginLogIdByUid).reduce((acc, uid) => {
+				const entry = latestCustomerLoginLogIdByUid[uid] || {};
+				acc[uid] = normalizeText(entry.id);
+				return acc;
+			}, {});
+
+			renderRequestsTable();
 			renderAccountsTable();
 		};
 
@@ -419,19 +478,19 @@
 		const raw = String(value || '');
 		if (!raw.trim()) return required ? `${label} is required.` : null;
 
-		if (/^\s+|\s+$/.test(raw)) return 'Remove spaces at the start or end.';
-		if (/\s{2,}/.test(raw)) return 'Use only one space between words.';
+		if (/^\s+|\s+$/.test(raw)) return 'Remove extra spaces.';
+		if (/\s{2,}/.test(raw)) return 'One space only.';
 
 		const clean = raw.trim();
 		if (clean.length < 2 || clean.length > 15) return 'Use 2 to 15 letters.';
 
 		const parts = clean.split(' ').filter(Boolean);
 		if (parts.length > 1 && parts.every((part) => part.length === 1)) {
-			return 'Enter a full name.';
+			return 'Enter full name.';
 		}
 
-		if (/\d/.test(clean)) return 'Do not use numbers.';
-		if (!/^[A-Za-z\s-]+$/.test(clean)) return 'Do not use special characters (only hyphen - is allowed).';
+		if (/\d/.test(clean)) return 'No numbers.';
+		if (!/^[A-Za-z\s-]+$/.test(clean)) return 'No special characters (e.g., Anne-Marie).';
 		if (!/^[A-Za-z]+(?:-[A-Za-z]+)?(?:\s[A-Za-z]+)*$/.test(clean)) return `Please enter a valid ${label.toLowerCase()}.`;
 
 		return null;
@@ -572,13 +631,42 @@
 
 	function toDateValue(value) {
 		if (!value) return 0;
+		if (typeof value === 'number' && Number.isFinite(value)) return value;
 		if (typeof value === 'string') {
+			const trimmed = value.trim();
+			if (/^\d{10,}$/.test(trimmed)) {
+				const numeric = Number(trimmed);
+				if (Number.isFinite(numeric) && numeric > 0) return numeric;
+			}
 			const parsed = Date.parse(value);
 			return Number.isNaN(parsed) ? 0 : parsed;
+		}
+		if (value && typeof value === 'object') {
+			if (typeof value.seconds === 'number') {
+				const nanos = typeof value.nanoseconds === 'number' ? value.nanoseconds : 0;
+				return (value.seconds * 1000) + Math.floor(nanos / 1000000);
+			}
+			if (typeof value._seconds === 'number') {
+				const nanos = typeof value._nanoseconds === 'number' ? value._nanoseconds : 0;
+				return (value._seconds * 1000) + Math.floor(nanos / 1000000);
+			}
 		}
 		if (value && typeof value.toMillis === 'function') return value.toMillis();
 		if (value && typeof value.toDate === 'function') return value.toDate().getTime();
 		return 0;
+	}
+
+	function getTimestampFromRecord(item) {
+		if (!item || typeof item !== 'object') return 0;
+		return toDateValue(
+			item.createdAt
+			|| item.timestamp
+			|| item.created_at
+			|| item.time
+			|| item.reportedAt
+			|| item.loggedAt
+			|| item.updatedAt
+		);
 	}
 
 	function formatDate(value) {
@@ -586,9 +674,36 @@
 		if (!time) return '-';
 		try {
 			return new Date(time).toLocaleString('en-US', {
-				month: 'short',
-				day: 'numeric',
+				month: '2-digit',
+				day: '2-digit',
 				year: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit'
+			});
+		} catch (_) {
+			return '-';
+		}
+	}
+
+	function formatDateOnly(value) {
+		const time = toDateValue(value);
+		if (!time) return '-';
+		try {
+			return new Date(time).toLocaleDateString('en-US', {
+				month: '2-digit',
+				day: '2-digit',
+				year: 'numeric'
+			});
+		} catch (_) {
+			return '-';
+		}
+	}
+
+	function formatTimeOnly(value) {
+		const time = toDateValue(value);
+		if (!time) return '-';
+		try {
+			return new Date(time).toLocaleTimeString('en-US', {
 				hour: 'numeric',
 				minute: '2-digit'
 			});
@@ -941,6 +1056,24 @@
 		return value ? value.charAt(0).toUpperCase() + value.slice(1) : '-';
 	}
 
+	function formatRequestStatusText(status) {
+		const value = normalizeLower(status);
+		if (!value) return '-';
+		if (value === 'canceled') return 'CANCELLED';
+		return value.replace(/[_-]+/g, ' ').toUpperCase();
+	}
+
+	function formatSkillText(skill) {
+		const value = normalizeLower(skill);
+		if (!value) return '';
+		return value.replace(/[_-]+/g, ' ').toUpperCase();
+	}
+
+	function renderSkillsBadges(skills) {
+		if (!Array.isArray(skills) || !skills.length) return '-';
+		return `<div class="skills-badge-list">${skills.map((skill) => `<span class="skills-badge">${escapeHtml(formatSkillText(skill))}</span>`).join('')}</div>`;
+	}
+
 	function formatRoleLabel(role) {
 		return normalizeLower(role) === 'technician' ? 'Technician' : 'Customer';
 	}
@@ -948,7 +1081,7 @@
 	function renderSessionHeaderLabel() {
 		const header = document.getElementById('sessionUserIdHeader');
 		if (!header) return;
-		header.textContent = `${formatRoleLabel(state.sessionRoleFilter)} ID`;
+		header.textContent = `${formatRoleLabel(state.sessionRoleFilter)} Code`;
 	}
 
 	function renderAccountRoleTabs() {
@@ -971,8 +1104,48 @@
 		return normalizeLower(state.accountRoleFilter || 'all') !== 'customer';
 	}
 
+	function shouldShowTechnicianIdColumn() {
+		return normalizeLower(state.accountRoleFilter || 'all') === 'technician';
+	}
+
+	function shouldShowTechnicianRatingColumn() {
+		return normalizeLower(state.accountRoleFilter || 'all') === 'technician';
+	}
+
+	function parseTechnicianRatingValue(value) {
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return null;
+		if (numeric < 0 || numeric > 5) return null;
+		return numeric;
+	}
+
+	function getTechnicianRatingLabel(account) {
+		const source = account && typeof account === 'object' ? account : {};
+		const candidates = [
+			source.rating,
+			source.averageRating,
+			source.avgRating,
+			source.technicianRating,
+			source.reviewRating,
+			source.customerRating,
+			source.stars,
+			source.ratingAverage
+		];
+
+		for (let index = 0; index < candidates.length; index += 1) {
+			const parsed = parseTechnicianRatingValue(candidates[index]);
+			if (parsed != null) return `${parsed.toFixed(1)} / 5`;
+		}
+
+		return 'No ratings yet';
+	}
+
 	function getAccountsTableColumnCount() {
-		return shouldShowSkillsColumn() ? 5 : 4;
+		let count = 4;
+		if (shouldShowTechnicianIdColumn()) count += 1;
+		if (shouldShowTechnicianRatingColumn()) count += 1;
+		if (shouldShowSkillsColumn()) count += 1;
+		return count;
 	}
 
 	function setFormMessage(message, isError) {
@@ -1061,11 +1234,21 @@
 	function renderAccountsTable() {
 		const tableBody = document.getElementById('accountsTableBody');
 		const skillsHeader = document.getElementById('accountsSkillsHeader');
+		const technicianIdHeader = document.getElementById('accountsTechnicianIdHeader');
+		const ratingHeader = document.getElementById('accountsRatingHeader');
 		if (!tableBody) return;
 		renderAccountRoleTabs();
 		const showSkills = shouldShowSkillsColumn();
+		const showTechnicianId = shouldShowTechnicianIdColumn();
+		const showTechnicianRating = shouldShowTechnicianRatingColumn();
 		if (skillsHeader) {
 			skillsHeader.hidden = !showSkills;
+		}
+		if (technicianIdHeader) {
+			technicianIdHeader.hidden = !showTechnicianId;
+		}
+		if (ratingHeader) {
+			ratingHeader.hidden = !showTechnicianRating;
 		}
 		const columnCount = getAccountsTableColumnCount();
 
@@ -1084,11 +1267,15 @@
 		tableBody.innerHTML = filtered.map((account) => {
 			const role = normalizeLower(account && account.role) || 'customer';
 			const accountId = normalizeText(account && (account.uid || account.id));
+			const technicianCode = role === 'technician'
+				? (buildRoleUserCode(accountId, 'technician') || '-')
+				: '-';
+			const ratingLabel = role === 'technician' ? getTechnicianRatingLabel(account) : '-';
 			const isEnabled = isAccountEnabled(account);
 			const status = isAccountOnline(account) ? 'Active' : 'Inactive';
 			const skills = toSkillsArray(
 				account && (account.skills || account.specialties || account.serviceCategories || account.fields || account.field)
-			).join(', ');
+			);
 			let actions = '-';
 			if (role === 'customer') {
 				actions = `<button type="button" class="row-action-btn ${isEnabled ? 'danger' : 'secondary'}" data-action="toggle-customer" data-user-id="${escapeHtml(accountId)}" data-next-state="${isEnabled ? 'disable' : 'enable'}">${isEnabled ? 'Disable' : 'Enable'}</button>`;
@@ -1098,9 +1285,11 @@
 			return `
 				<tr>
 					<td>${escapeHtml(getProfileName(account))}</td>
+					${showTechnicianId ? `<td>${escapeHtml(technicianCode)}</td>` : ''}
+					${showTechnicianRating ? `<td>${escapeHtml(ratingLabel)}</td>` : ''}
 					<td>${escapeHtml(normalizeText(account && account.email) || '-')}</td>
 					<td>${escapeHtml(status)}</td>
-					${showSkills ? `<td>${escapeHtml(skills || '-')}</td>` : ''}
+					${showSkills ? `<td>${renderSkillsBadges(skills)}</td>` : ''}
 					<td>${actions}</td>
 				</tr>
 			`;
@@ -1109,22 +1298,47 @@
 
 	function renderSessionLogsTable() {
 		const tableBody = document.getElementById('sessionLogsTableBody');
+		const pageIndicator = document.getElementById('sessionPageIndicator');
+		const prevBtn = document.getElementById('sessionPrevPageBtn');
+		const nextBtn = document.getElementById('sessionNextPageBtn');
 		if (!tableBody) return;
 		renderSessionHeaderLabel();
 
 		const list = Array.isArray(state.sessionLogs) ? state.sessionLogs : [];
+		const pageCount = Math.max(1, Math.ceil(list.length / SESSION_LOGS_PAGE_SIZE));
+		const activePage = Math.min(Math.max(1, Number(state.sessionLogsPage) || 1), pageCount);
+		state.sessionLogsPage = activePage;
+		const startIndex = (activePage - 1) * SESSION_LOGS_PAGE_SIZE;
+		const visibleList = list.slice(startIndex, startIndex + SESSION_LOGS_PAGE_SIZE);
+
+		if (pageIndicator) pageIndicator.textContent = `Page ${activePage} of ${pageCount}`;
+		if (prevBtn) prevBtn.disabled = activePage <= 1;
+		if (nextBtn) nextBtn.disabled = activePage >= pageCount;
+
 		if (!list.length) {
-			tableBody.innerHTML = '<tr><td colspan="3">No logs found for this selection.</td></tr>';
+			tableBody.innerHTML = '<tr><td colspan="4">No logs found for this selection.</td></tr>';
 			return;
 		}
 
-		tableBody.innerHTML = list.map((item) => {
+		tableBody.innerHTML = visibleList.map((item) => {
+			const rowTime = getTimestampFromRecord(item);
 			const uid = normalizeText(item && item.uid) || '-';
+			const roleForRow = normalizeLower(item && item.role) || normalizeLower(state.sessionRoleFilter);
+			const userCode = buildRoleUserCode(uid, roleForRow);
+			const fullSessionId = normalizeText(item && item.sessionId) || '-';
+			const sessionCode = buildSessionCodeFromId(item && item.sessionId);
+			const sessionCell = sessionCode === '-'
+				? '-'
+				: `<span title="${escapeHtml(fullSessionId)}">${escapeHtml(sessionCode)}</span>`;
+			const userCell = userCode === '-'
+				? '-'
+				: `<span title="${escapeHtml(uid)}">${escapeHtml(userCode)}</span>`;
 			return `
 				<tr>
-					<td>${escapeHtml(formatDate(item && item.createdAt))}</td>
-					<td>${escapeHtml(normalizeText(item && item.sessionId) || '-')}</td>
-					<td>${escapeHtml(uid)}</td>
+					<td>${escapeHtml(formatDateOnly(rowTime))}</td>
+					<td>${escapeHtml(formatTimeOnly(rowTime))}</td>
+					<td>${sessionCell}</td>
+					<td>${userCell}</td>
 				</tr>
 			`;
 		}).join('');
@@ -1132,7 +1346,8 @@
 
 	async function loadSessionLogs() {
 		const tableBody = document.getElementById('sessionLogsTableBody');
-		if (tableBody) tableBody.innerHTML = '<tr><td colspan="3">Loading session logs...</td></tr>';
+		if (tableBody) tableBody.innerHTML = '<tr><td colspan="4">Loading session logs...</td></tr>';
+		state.sessionLogsPage = 1;
 		renderSessionHeaderLabel();
 
 		if (typeof unsubscribeSessionLogs === 'function') {
@@ -1146,16 +1361,18 @@
 				state.sessionActionFilter,
 				(items) => {
 					state.sessionLogs = Array.isArray(items) ? items : [];
+					state.sessionLogsPage = 1;
 					renderSessionLogsTable();
 				},
 				(error) => {
 					state.sessionLogs = [];
+					state.sessionLogsPage = 1;
 					const errorCode = normalizeLower(error && error.code);
 					if (tableBody && (errorCode.includes('permission') || errorCode.includes('denied'))) {
-						tableBody.innerHTML = '<tr><td colspan="3">Permission denied while loading logs. Check Firebase sessionLogs rules.</td></tr>';
+						tableBody.innerHTML = '<tr><td colspan="4">Permission denied while loading logs. Check Firebase sessionLogs rules.</td></tr>';
 						return;
 					}
-					if (tableBody) tableBody.innerHTML = '<tr><td colspan="3">Failed to load logs.</td></tr>';
+					if (tableBody) tableBody.innerHTML = '<tr><td colspan="4">Failed to load logs.</td></tr>';
 				},
 				400
 			);
@@ -1163,7 +1380,162 @@
 		}
 
 		state.sessionLogs = [];
-		if (tableBody) tableBody.innerHTML = '<tr><td colspan="3">Session logs are unavailable.</td></tr>';
+		state.sessionLogsPage = 1;
+		if (tableBody) tableBody.innerHTML = '<tr><td colspan="4">Session logs are unavailable.</td></tr>';
+	}
+
+	function renderReportsTable() {
+		const tableBody = document.getElementById('reportsTableBody');
+		if (!tableBody) return;
+
+		const list = Array.isArray(state.reports) ? state.reports : [];
+		if (!list.length) {
+			tableBody.innerHTML = '<tr><td colspan="6">No technician reports yet.</td></tr>';
+			return;
+		}
+
+		tableBody.innerHTML = list.map((item) => {
+			const requestCode = normalizeText(item && (item.requestCode || item.requestId || item.bookingCode || item.bookingId)) || '-';
+			const customerName = normalizeText(item && item.customerName) || normalizeText(item && item.customerEmail) || normalizeText(item && item.customerId) || '-';
+			const technicianId = formatTechnicianReference(
+				item && (item.technicianEmail || item.assignedTechnicianEmail),
+				item && (item.technicianId || item.technicianUid || item.assignedTechnicianId)
+			);
+			const reason = normalizeText(item && item.reason) || '-';
+			const details = normalizeText(item && (item.details || item.explanation || item.note || item.description)) || '-';
+			const createdAt = getTimestampFromRecord(item);
+
+			return `
+				<tr>
+					<td>${escapeHtml(formatDate(createdAt))}</td>
+					<td>${escapeHtml(requestCode)}</td>
+					<td>${escapeHtml(customerName)}</td>
+					<td>${escapeHtml(technicianId)}</td>
+					<td>${escapeHtml(reason)}</td>
+					<td>${escapeHtml(details)}</td>
+				</tr>
+			`;
+		}).join('');
+	}
+
+	async function loadReports(options) {
+		const allowReauthRetry = !options || options.allowReauthRetry !== false;
+		const tableBody = document.getElementById('reportsTableBody');
+		if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading reports...</td></tr>';
+
+		if (typeof unsubscribeReports === 'function') {
+			unsubscribeReports();
+			unsubscribeReports = null;
+		}
+
+		const rtdb = getRealtimeDatabase();
+		if (!rtdb) {
+			state.reports = [];
+			if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Realtime Database is unavailable.</td></tr>';
+			return;
+		}
+
+		if (usersDb && usersDb.auth && !usersDb.auth.currentUser) {
+			const session = readAdminSession();
+			try {
+				await ensureDemoAdminFirebaseAuth(session);
+			} catch (_) {
+			}
+			await waitForCurrentAuthUser(3500);
+		}
+
+		const reportPaths = [
+			{ path: 'reports/technician', required: true },
+			{ path: 'reports/technicians', required: false },
+			{ path: 'technicianReports', required: false }
+		];
+		const reportCacheByPath = new Map();
+		const refs = [];
+		const listeners = [];
+
+		const emitMergedReports = () => {
+			const mergedBySignature = new Map();
+			reportCacheByPath.forEach((items) => {
+				(items || []).forEach((item) => {
+					const requestId = normalizeText(item && (item.requestId || item.requestCode || item.bookingCode || item.bookingId));
+					const customerId = normalizeText(item && (item.customerId || item.customerEmail));
+					const technicianId = normalizeText(item && (item.technicianId || item.technicianUid || item.technicianEmail));
+					const reason = normalizeText(item && item.reason);
+					const stamp = String(getTimestampFromRecord(item) || 0);
+					const signature = [requestId, customerId, technicianId, reason, stamp].join('|') || normalizeText(item && item.id);
+
+					if (!signature) return;
+					if (!mergedBySignature.has(signature)) mergedBySignature.set(signature, item);
+				});
+			});
+
+			const reports = Array.from(mergedBySignature.values());
+			reports.sort((left, right) => getTimestampFromRecord(right) - getTimestampFromRecord(left));
+			state.reports = reports;
+			renderReportsTable();
+		};
+
+		const makeSuccess = (path) => (snapshot) => {
+			const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+			const reports = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
+			reportCacheByPath.set(path, reports);
+			emitMergedReports();
+		};
+		const makeFailure = (path, requiredPath) => async (error) => {
+			const errorCode = normalizeLower(error && error.code);
+			if (tableBody && (errorCode.includes('permission') || errorCode.includes('denied'))) {
+				if (!requiredPath) {
+					// Ignore permission errors on optional legacy paths.
+					return;
+				}
+
+				state.reports = [];
+				if (allowReauthRetry) {
+					if (typeof unsubscribeReports === 'function') {
+						unsubscribeReports();
+						unsubscribeReports = null;
+					}
+
+					const session = readAdminSession();
+					try {
+						await ensureDemoAdminFirebaseAuth(session);
+					} catch (_) {
+					}
+					await waitForCurrentAuthUser(3500);
+					await loadReports({ allowReauthRetry: false });
+					return;
+				}
+
+				tableBody.innerHTML = '<tr><td colspan="6">Permission denied while loading reports. Check Firebase reports rules.</td></tr>';
+				return;
+			}
+
+			if (!requiredPath) return;
+			state.reports = [];
+			if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Failed to load reports.</td></tr>';
+		};
+
+		reportPaths.forEach((entry) => {
+			const path = normalizeText(entry && entry.path);
+			const requiredPath = !!(entry && entry.required);
+			const ref = rtdb.ref(path).limitToLast(300);
+			const success = makeSuccess(path);
+			const failure = makeFailure(path, requiredPath);
+			refs.push(ref);
+			listeners.push({ success, failure });
+			ref.on('value', success, failure);
+		});
+		unsubscribeReports = function () {
+			for (let index = 0; index < refs.length; index += 1) {
+				const ref = refs[index];
+				const listener = listeners[index] || {};
+				const success = listener.success;
+				const failure = listener.failure;
+				if (!ref || typeof ref.off !== 'function') continue;
+				ref.off('value', success);
+				ref.off('value', failure);
+			}
+		};
 	}
 
 	function bindSessionFilters() {
@@ -1176,12 +1548,14 @@
 
 		sessionRoleFilter.addEventListener('change', async () => {
 			state.sessionRoleFilter = normalizeLower(sessionRoleFilter.value || 'customer');
+			state.sessionLogsPage = 1;
 			renderSessionHeaderLabel();
 			await loadSessionLogs();
 		});
 
 		sessionActionFilter.addEventListener('change', async () => {
 			state.sessionActionFilter = normalizeLower(sessionActionFilter.value || 'login');
+			state.sessionLogsPage = 1;
 			await loadSessionLogs();
 		});
 
@@ -1245,7 +1619,7 @@
 		body.innerHTML = recent.map((item) => `
 			<tr>
 				<td>${escapeHtml(formatRequestCode(item))}</td>
-				<td>${escapeHtml(normalizeText(item && item.status) || '-')}</td>
+				<td>${escapeHtml(formatRequestStatusText(item && item.status))}</td>
 				<td>${escapeHtml(getRequestTechnician(item))}</td>
 				<td>${escapeHtml(formatDate((item && item.technicianUpdatedAt) || (item && item.createdAt)))}</td>
 			</tr>
@@ -1271,9 +1645,8 @@
 
 	function getRequestBucket(item) {
 		const status = normalizeLower(item && item.status);
-		const hasTechnician = !!normalizeText(item && (item.assignedTechnicianId || item.assignedTechnicianEmail || item.technicianId || item.technicianEmail));
 		if (CANCELLED_STATUSES.has(status)) return 'cancelled';
-		if (ACCEPTED_STATUSES.has(status) || hasTechnician) return 'accepted';
+		if (ACCEPTED_STATUSES.has(status)) return 'accepted';
 		return 'waiting';
 	}
 
@@ -1282,6 +1655,27 @@
 		const filter = normalizeLower(statusFilter || 'waiting');
 		if (!filter) return list;
 		return list.filter((item) => getRequestBucket(item) === filter);
+	}
+
+	function getRequestSessionLogRawValue(item) {
+		const direct = normalizeText(item && (item.createdBySessionLogId || item.sessionLogId || item.logId));
+		if (direct) return direct;
+
+		const fallbackSession = normalizeText(item && (item.createdBySessionId || item.sessionId));
+		if (fallbackSession) return fallbackSession;
+
+		const customerId = normalizeText(item && item.customerId);
+		if (!customerId) return '';
+
+		return normalizeText(state && state.latestCustomerLoginLogIdByUid && state.latestCustomerLoginLogIdByUid[customerId]);
+	}
+
+	function renderRequestSessionLogCell(item) {
+		const raw = getRequestSessionLogRawValue(item);
+		if (!raw) return '-';
+		const code = buildSessionCodeFromId(raw);
+		if (!code || code === '-') return escapeHtml(raw);
+		return `<span title="${escapeHtml(raw)}">${escapeHtml(code)}</span>`;
 	}
 
 	function renderRequestsTable() {
@@ -1315,10 +1709,10 @@
 		tableBody.innerHTML = filtered.map((item, index) => `
 			<tr>
 				<td>${escapeHtml(formatRequestCode(item))}</td>
-				<td>${escapeHtml(normalizeText(item && item.createdBySessionLogId) || '-')}</td>
+				<td>${renderRequestSessionLogCell(item)}</td>
 				<td>${escapeHtml(getRequestCustomer(item))}</td>
 				<td>${escapeHtml(getCustomerCode(item))}</td>
-				<td>${escapeHtml(normalizeText(item && item.status) || '-')}</td>
+				<td>${escapeHtml(formatRequestStatusText(item && item.status))}</td>
 				<td>${escapeHtml(getRequestTechnician(item))}</td>
 				<td>${escapeHtml(getRequestService(item))}</td>
 				<td>${escapeHtml(getRequestSchedule(item))}</td>
@@ -1345,32 +1739,13 @@
 			};
 		});
 
-		const approveButtons = Array.from(tableBody.querySelectorAll('button[data-action="approve-request"][data-request-id]'));
-		approveButtons.forEach((button) => {
-			button.onclick = async (event) => {
-				event.preventDefault();
-				await approveRequestByAdmin(button.getAttribute('data-request-id'), button);
-			};
-		});
-
-		const declineButtons = Array.from(tableBody.querySelectorAll('button[data-action="decline-request"][data-request-id]'));
-		declineButtons.forEach((button) => {
-			button.onclick = async (event) => {
-				event.preventDefault();
-				await declineRequestByAdmin(button.getAttribute('data-request-id'), button);
-			};
-		});
 	}
 
 	function getRequestActionHtml(item, rowIndex) {
 		const requestId = normalizeText(item && (item.id || item.requestId));
 		if (!requestId) return '-';
-		const bucket = getRequestBucket(item);
 		const indexAttr = Number.isInteger(rowIndex) ? rowIndex : -1;
 		const detailsButton = `<button type="button" class="row-action-btn secondary" data-action="view-request-details" data-request-id="${escapeHtml(requestId)}" data-request-index="${indexAttr}" onclick="if(window.hfsAdminOpenRequestDetailsByIndex){window.hfsAdminOpenRequestDetailsByIndex(${indexAttr});}else if(window.hfsAdminOpenRequestDetailsFromButton){window.hfsAdminOpenRequestDetailsFromButton(this);} return false;">Details</button>`;
-		if (bucket === 'waiting') {
-			return `<div class="row-actions">${detailsButton}<button type="button" class="row-action-btn" data-action="approve-request" data-request-id="${escapeHtml(requestId)}">Approve</button><button type="button" class="row-action-btn danger" data-action="decline-request" data-request-id="${escapeHtml(requestId)}">Decline</button></div>`;
-		}
 		return `<div class="row-actions">${detailsButton}</div>`;
 	}
 
@@ -1522,7 +1897,7 @@
 		setAdminRequestDetailText('adminDetailRequestId', formatRequestCode(item));
 		setAdminRequestDetailText('adminDetailCustomer', getRequestCustomer(item));
 		setAdminRequestDetailText('adminDetailCustomerId', getCustomerCode(item));
-		setAdminRequestDetailText('adminDetailStatus', normalizeText(item && item.status));
+		setAdminRequestDetailText('adminDetailStatus', formatRequestStatusText(item && item.status));
 		setAdminRequestDetailText('adminDetailServiceMode', normalizeText(item && item.serviceMode));
 		setAdminRequestDetailText('adminDetailServiceType', serviceTypeValue);
 		setAdminRequestDetailText('adminDetailCategory', categoryValue);
@@ -1808,7 +2183,11 @@
 	}
 
 	function getRequestTechnician(item) {
-		return normalizeText(item && (item.assignedTechnicianEmail || item.technicianEmail || item.assignedTechnicianId || item.technicianId)) || '-';
+		if (getRequestBucket(item) !== 'accepted') return '-';
+		return formatTechnicianReference(
+			item && (item.assignedTechnicianEmail || item.technicianEmail),
+			item && (item.assignedTechnicianId || item.technicianId)
+		);
 	}
 
 	function getRequestSchedule(item) {
@@ -2097,7 +2476,7 @@
 	}
 
 	function bindNavigation() {
-		const buttons = Array.from(document.querySelectorAll('.nav-link[data-section], .nav-sub-link[data-section]'));
+		const buttons = Array.from(document.querySelectorAll('.nav-link[data-section], .nav-sub-link[data-section], .stat-card-action[data-section]'));
 		const topButtons = Array.from(document.querySelectorAll('.nav-link[data-section]'));
 		const subButtons = Array.from(document.querySelectorAll('.nav-sub-link[data-section]'));
 		const manageGroup = document.getElementById('manageAccountsGroup');
@@ -2185,6 +2564,17 @@
 		});
 	}
 
+	function bindSidebarToggle() {
+		const appShell = document.querySelector('.app-shell');
+		const toggleBtn = document.getElementById('adminSidebarToggle');
+		if (!appShell || !toggleBtn) return;
+
+		toggleBtn.addEventListener('click', () => {
+			const collapsed = appShell.classList.toggle('sidebar-collapsed');
+			toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+		});
+	}
+
 	function bindEvents() {
 		registerGlobalRequestActionFallbacks();
 
@@ -2199,6 +2589,9 @@
 		const requestDetailDoneBtn = document.getElementById('adminRequestDetailDoneBtn');
 		const refreshRequestsBtn = document.getElementById('refreshRequestsBtn');
 		const refreshSessionLogsBtn = document.getElementById('refreshSessionLogsBtn');
+		const sessionPrevPageBtn = document.getElementById('sessionPrevPageBtn');
+		const sessionNextPageBtn = document.getElementById('sessionNextPageBtn');
+		const refreshReportsBtn = document.getElementById('refreshReportsBtn');
 		const addTechnicianForm = document.getElementById('addTechnicianForm');
 		const closeInvitePopupBtn = document.getElementById('closeInvitePopupBtn');
 		const inviteSentPopup = document.getElementById('inviteSentPopup');
@@ -2267,21 +2660,7 @@
 					return;
 				}
 
-				const approveBtn = event.target && event.target.closest
-					? event.target.closest('button[data-action="approve-request"][data-request-id]')
-					: null;
-				if (approveBtn) {
-					event.preventDefault();
-					await approveRequestByAdmin(approveBtn.getAttribute('data-request-id'), approveBtn);
-					return;
-				}
-
-				const declineBtn = event.target && event.target.closest
-					? event.target.closest('button[data-action="decline-request"][data-request-id]')
-					: null;
-				if (!declineBtn) return;
-				event.preventDefault();
-				await declineRequestByAdmin(declineBtn.getAttribute('data-request-id'), declineBtn);
+				return;
 		};
 
 		if (requestsTableBody) {
@@ -2333,7 +2712,30 @@
 
 		if (refreshSessionLogsBtn) {
 			refreshSessionLogsBtn.addEventListener('click', async () => {
+				state.sessionLogsPage = 1;
 				await loadSessionLogs();
+			});
+		}
+
+		if (sessionPrevPageBtn) {
+			sessionPrevPageBtn.addEventListener('click', () => {
+				state.sessionLogsPage = Math.max(1, (Number(state.sessionLogsPage) || 1) - 1);
+				renderSessionLogsTable();
+			});
+		}
+
+		if (sessionNextPageBtn) {
+			sessionNextPageBtn.addEventListener('click', () => {
+				const total = Array.isArray(state.sessionLogs) ? state.sessionLogs.length : 0;
+				const pageCount = Math.max(1, Math.ceil(total / SESSION_LOGS_PAGE_SIZE));
+				state.sessionLogsPage = Math.min(pageCount, (Number(state.sessionLogsPage) || 1) + 1);
+				renderSessionLogsTable();
+			});
+		}
+
+		if (refreshReportsBtn) {
+			refreshReportsBtn.addEventListener('click', async () => {
+				await loadReports();
 			});
 		}
 
@@ -2426,6 +2828,10 @@
 					unsubscribeSessionLogs();
 					unsubscribeSessionLogs = null;
 				}
+				if (typeof unsubscribeReports === 'function') {
+					unsubscribeReports();
+					unsubscribeReports = null;
+				}
 				stopSessionPresenceTracking();
 
 				if (usersDb && typeof usersDb.signOut === 'function') {
@@ -2465,9 +2871,11 @@
 		await migrateSpecificEmailsToTechnician();
 
 		bindNavigation();
+		bindSidebarToggle();
 		bindEvents();
 		startSessionPresenceTracking();
 		Promise.all([loadAccounts(), loadRequests(), loadSessionLogs()]);
+		loadReports();
 
 		window.addEventListener('beforeunload', () => {
 			if (typeof unsubscribeAccounts === 'function') {
@@ -2481,6 +2889,10 @@
 			if (typeof unsubscribeSessionLogs === 'function') {
 				unsubscribeSessionLogs();
 				unsubscribeSessionLogs = null;
+			}
+			if (typeof unsubscribeReports === 'function') {
+				unsubscribeReports();
+				unsubscribeReports = null;
 			}
 			stopSessionPresenceTracking();
 		});

@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabButtons = Array.from(document.querySelectorAll('.request-tabs .tab-btn'));
   const typeFilter = document.getElementById('typeFilter');
   const typeFilterLabel = document.getElementById('typeFilterLabel');
-  const tabDescription = document.getElementById('requestTabDescription');
   const cancelModal = document.getElementById('cancelRequestModal');
   const cancelCancelBtn = document.getElementById('cancelRequestCancelBtn');
   const cancelYesBtn = document.getElementById('cancelRequestYesBtn');
@@ -22,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingNoticeResolver = null;
   const technicianNameByUid = Object.create(null);
   const technicianNameByEmail = Object.create(null);
+  const WAITING_TECHNICIAN_LABEL = 'WAITING FOR TECHNICIAN';
   const technicianLookupInFlight = Object.create(null);
 
   function closeNoticeModal() {
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function askCancelConfirmation() {
     if (!cancelModal || !cancelYesBtn || !cancelCancelBtn) {
-      return Promise.resolve(window.confirm('Cancel this pending request?'));
+      return Promise.resolve(window.confirm('Cancel this request? Once cancelled, this request will no longer continue.'));
     }
 
     cancelModal.hidden = false;
@@ -338,9 +338,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasResolvedName = false;
 
     items.forEach((item) => {
+      if (!shouldShowTechnicianName(item)) return;
       const assigned = getAssignedTechnicianKey(item);
       if (!assigned.uid && !assigned.email) return;
-      if (getTechnicianName(item) !== 'Waiting for assignment') return;
+      if (getTechnicianName(item) !== WAITING_TECHNICIAN_LABEL) return;
 
       const lookupKey = assigned.uid ? `uid:${assigned.uid}` : `email:${assigned.email}`;
       if (technicianLookupInFlight[lookupKey]) return;
@@ -349,12 +350,15 @@ document.addEventListener('DOMContentLoaded', () => {
       tasks.push((async () => {
         let profile = null;
         try {
-          if (assigned.uid && typeof usersDb.getUserById === 'function') {
-            profile = await usersDb.getUserById(assigned.uid);
-          }
-          if (!profile && assigned.email && typeof usersDb.getUserByEmail === 'function') {
-            profile = await usersDb.getUserByEmail(assigned.email);
-          }
+          const [byId, byEmail] = await Promise.all([
+            (assigned.uid && typeof usersDb.getUserById === 'function')
+              ? usersDb.getUserById(assigned.uid).catch(() => null)
+              : Promise.resolve(null),
+            (assigned.email && typeof usersDb.getUserByEmail === 'function')
+              ? usersDb.getUserByEmail(assigned.email).catch(() => null)
+              : Promise.resolve(null)
+          ]);
+          profile = byId || byEmail || null;
         } catch (_) {
           profile = null;
         }
@@ -378,6 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getTechnicianName(item) {
+    if (!shouldShowTechnicianName(item)) return WAITING_TECHNICIAN_LABEL;
+
     const fullNameFromParts = getTechnicianNameFromItemParts(item);
     if (fullNameFromParts) return fullNameFromParts;
 
@@ -393,7 +399,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = candidates
       .map((value) => String(value || '').trim())
       .find((value) => value);
-    return name || 'Waiting for assignment';
+    return name || WAITING_TECHNICIAN_LABEL;
+  }
+
+  function shouldShowTechnicianName(item) {
+    const status = String(item && item.status ? item.status : '').toLowerCase();
+    return status === 'accepted'
+      || status === 'confirmed'
+      || status === 'in-progress'
+      || status === 'ongoing'
+      || status === 'completed'
+      || status === 'finished';
   }
 
   function hasAssignedTechnician(item) {
@@ -407,16 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const status = String(item && item.status ? item.status : '').toLowerCase();
     if (!hasAssignedTechnician(item)) return false;
     return status === 'accepted' || status === 'confirmed' || status === 'in-progress' || status === 'ongoing';
-  }
-
-  function getHistoryDateLabel(item) {
-    const status = String(item && item.status ? item.status : '').toLowerCase();
-    const raw = item && (item.completedAt || item.cancelledAt || item.canceledAt || item.updatedAt || item.finishedAt);
-    const dateLabel = formatDate(raw);
-    if (status === 'completed' || status === 'finished') return `Completed: ${dateLabel}`;
-    if (status === 'cancelled' || status === 'canceled') return `Cancelled: ${dateLabel}`;
-    if (status === 'rejected') return `Rejected: ${dateLabel}`;
-    return `Updated: ${dateLabel}`;
   }
 
   function isConfirmedBucketStatus(statusValue) {
@@ -492,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : '';
 
       const status = String(item.status || 'pending').toLowerCase();
-      const canCancel = allowCancel && (status === 'pending' || status === 'offered');
+      const canCancel = allowCancel && (status === 'pending' || status === 'offered' || status === 'accepted' || status === 'confirmed');
       const type = normalizeBookingType(item);
       const selectedOption = getSelectedOption(item);
       const canChat = canChatWithTechnician(item);
@@ -523,8 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>Address: ${escapeHtml(renderAddressValue(item.location))}</span>
             <span>Additional Details: ${escapeHtml(item.location && item.location.additionalDetails ? item.location.additionalDetails : 'N/A')}</span>
             ${showStatus ? `<span>Status: <span class="request-status ${escapeHtml(statusClassName(status))}">${escapeHtml(status)}</span></span>` : ''}
-            <span>Requested: ${formatDate(item.createdAt)}</span>
-            <span>${escapeHtml(getHistoryDateLabel(item))}</span>
             ${mediaHtml}
           </div>
           ${actionButtons.length ? `<div class="request-actions">${actionButtons.join('')}</div>` : ''}
@@ -561,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : [];
 
     renderRequestList(confirmedItems, {
-      allowCancel: false,
+      allowCancel: true,
       emptyDefault: 'No confirmed request yet.',
       emptyAppointment: 'No confirmed appointment yet.',
       emptyTechnician: 'No confirmed technician booking yet.'
@@ -742,10 +746,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (filterWrap) {
       filterWrap.hidden = false;
     }
-
-    if (tabDescription) {
-      tabDescription.textContent = '';
-    }
   }
 
   function getInitialTabFromUrl() {
@@ -900,7 +900,9 @@ document.addEventListener('DOMContentLoaded', () => {
     activeTab = getInitialTabFromUrl();
     setActiveTab(activeTab);
     startRealtimeList(user);
-    await refreshList();
+    if (typeof usersDb.subscribeBookingsForUser !== 'function') {
+      await refreshList();
+    }
   });
 
   window.addEventListener('beforeunload', () => {

@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Book a Service €” HomeFixSolution</title>
+  <title>Book a Service - HomeFixSolution</title>
   <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
   <link rel="stylesheet" href="../../css/user/pages/book/index.css">
    <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
-<body>
+<body class="dashboard-home-page book-details-page">
   <div class="app-shell">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">˜°</button>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">&#9776;</button>
         <div class="logo-wrapper" aria-hidden="true">
           <img class="top-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
         </div>
@@ -20,7 +20,7 @@
       </div>
       <div class="user-menu-wrap">
         <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false">
-          User <span class="caret">–¼</span>
+          User <span class="caret">&#9662;</span>
         </button>
         <div class="user-menu" id="userMenu" role="menu" aria-hidden="true">
           <a href="../../login.html" role="menuitem" data-logout="true">Log out</a>
@@ -88,7 +88,7 @@
                 <img src="../../images/icons/doc-add.svg" alt="Add file">
                 Add Photo/Video
               </button>
-              <div class="upload-hint">Up to 4 files €¢ Photo: 5MB max €¢ Video: 20MB max</div>
+              <div class="upload-hint">Up to 4 files | Photo: 5MB max | Video: 20MB max</div>
               <input type="file" id="mediaInput" accept="image/*,video/*" multiple hidden>
               <div class="field-error" id="error-media"></div>
             </section>
@@ -99,8 +99,8 @@
                   <div class="calendar-head">
                     <div class="calendar-month" id="calendarMonth">Month YYYY</div>
                     <div class="calendar-nav">
-                      <button type="button" id="prevMonth" aria-label="Previous month">€¹</button>
-                      <button type="button" id="nextMonth" aria-label="Next month">€º</button>
+                      <button type="button" id="prevMonth" aria-label="Previous month">&#8249;</button>
+                      <button type="button" id="nextMonth" aria-label="Next month">&#8250;</button>
                     </div>
                   </div>
                   <div class="calendar-weekdays">
@@ -186,9 +186,9 @@
               <div class="booking-type-box technician-picker-box">
                 <div class="booking-type-title">Choose Technician</div>
                 <p class="address-step-help">Technicians are filtered by your selected category.</p>
-                <select class="control" id="requestTechnician" name="requestTechnician">
-                  <option value="" selected>Select technician</option>
-                </select>
+                <div class="technician-options" id="requestTechnicianList" role="radiogroup" aria-label="Choose technician">
+                  <div class="address-empty">Loading technicians...</div>
+                </div>
                 <div class="field-error" id="error-requestTechnician"></div>
               </div>
             </section>
@@ -198,20 +198,26 @@
                 <div class="booking-type-title">Request Summary</div>
                 <div class="summary-list">
                   <div><strong>Service Mode:</strong> <span id="summaryServiceMode">-</span></div>
-                  <div><strong>Address:</strong> <span id="summaryAddress" class="summary-preline">-</span></div>
-                  <div><strong>Technician:</strong> <span id="summaryTechnician">-</span></div>
                   <div><strong>Service Type:</strong> <span id="summaryServiceType">-</span></div>
                   <div><strong>Category:</strong> <span id="summaryCategory">-</span></div>
                   <div id="summarySelectedOptionRow"><strong id="summarySelectedOptionLabel">Repair Concern:</strong> <span id="summarySelectedOption">-</span></div>
+                   <div><strong>Additional Details:</strong> <span id="summaryIssue">-</span></div>
+                  <div><strong>Technician:</strong> <span id="summaryTechnician">-</span></div>
                   <div><strong>Preferred Schedule:</strong> <span id="summarySchedule" class="summary-preline">-</span></div>
-                  <div><strong>Details:</strong> <span id="summaryIssue">-</span></div>
+                  <div class="summary-address-row"><strong>Address:</strong><span id="summaryAddress" class="summary-preline">-</span></div>
                   <div><strong>Media Attached:</strong> <span id="summaryMedia">0 files</span></div>
                   <div class="summary-media-grid" id="summaryMediaPreview" aria-live="polite"></div>
                 </div>
-                <label class="booking-type-option terms-check-row" for="confirmTerms">
-                  <input type="checkbox" id="confirmTerms" name="confirmTerms">
-                  <span>I agree to the Terms and Conditions and understand that once a technician accepts, scheduling and service are handled directly between customer and technician.</span>
+              </div>
+
+              <div class="booking-type-box terms-panel">
+                <div class="booking-type-title">Terms and Conditions</div>
+                <button class="form-btn" id="openTermsBtn" type="button">Read Terms and Conditions</button>
+                <label class="terms-consent-row" for="confirmTerms">
+                  <input type="checkbox" id="confirmTerms" name="confirmTerms" disabled>
+                  <span>I have read and understood the Terms and Conditions.</span>
                 </label>
+                <span class="terms-read-status" id="termsReadStatus">Read the terms first, then confirm to submit your request.</span>
                 <div class="field-error" id="error-terms"></div>
               </div>
               <div class="field-error" id="error-submit"></div>
@@ -244,31 +250,38 @@
       </main>
     </div>
   </div>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-  <script src="../../firebase/config/firebase-config.js"></script>
-  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
-  <script src="../../databasehfs/users/user-profile-database.js"></script>
-  <script src="../../databasehfs/users/booking-database.js"></script>
-  <script src="../../databasehfs/users/user-database.js"></script>
-  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
-  <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
-  <script src="../../Js/user/side-panel/buttons/home.js"></script>
-  <script src="../../Js/user/side-panel/buttons/request.js"></script>
-  <script src="../../Js/user/side-panel/buttons/history.js"></script>
-  <script src="../../Js/user/side-panel/buttons/profile.js"></script>
-  <script src="../../Js/user/side-panel/buttons/address-book.js"></script>
-  <script src="../../Js/user/side-panel/buttons/security.js"></script>
-  <script src="../../Js/user/side-panel/buttons/about.js"></script>
-  <script src="../../Js/user/side-panel/buttons/logout.js"></script>
-  <script src="../../Js/user/dashboard/parts/core.js"></script>
-  <script src="../../Js/user/dashboard/main.js"></script>
-  <script src="../../Js/user/request/details/parts/core.js"></script>
-  <script src="../../Js/user/request/details/app.js"></script>
-  <script src="../../Js/user/request/details/index.js"></script>
+
+  <div class="terms-modal" id="termsModal" hidden>
+    <div class="terms-modal-card" role="dialog" aria-modal="true" aria-labelledby="termsModalTitle">
+      <h2 id="termsModalTitle">Terms and Conditions</h2>
+      <div class="terms-scroll-box" id="termsScrollBox" tabindex="0">
+        <p>By proceeding with this booking request, you confirm that all information you submit is accurate and complete.</p>
+        <p>You agree to communicate respectfully and provide clear issue details to avoid delays in service processing.</p>
+        <p><strong>You confirm this request is genuine and not fake, spam, prank, or misleading in any way.</strong></p>
+        <p>Submitting a fake request may result in cancellation, account restriction, or removal from the platform.</p>
+        <p>Once a technician accepts your request, schedule coordination and service execution will follow the confirmed booking details in the system.</p>
+        <p>By clicking "I Understand and Proceed", you agree to these terms and allow HomeFixSolution to process your request.</p>
+      </div>
+      <div class="terms-modal-actions">
+        <button class="form-btn form-btn-secondary" id="termsCloseBtn" type="button">Close</button>
+        <button class="form-btn" id="termsProceedBtn" type="button" disabled>I Understand and Proceed</button>
+      </div>
+    </div>
+  </div>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  <script defer src="../../firebase/config/firebase-config.js"></script>
+  <script defer src="../../databasehfs/users/core.js?v=20260312a"></script>
+  <script defer src="../../databasehfs/users/user-profile-database.js?v=20260312a"></script>
+  <script defer src="../../databasehfs/users/booking-database.js?v=20260313b"></script>
+  <script defer src="../../databasehfs/users/user-database.js?v=20260313a"></script>
+  <script defer src="../../Js/user/side-panel/core.js?v=20260309b"></script>
+  <script defer src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
+  <script defer src="../../Js/user/request/details/parts/core.js?v=20260313c"></script>
+  <script defer src="../../Js/user/request/details/index.js"></script>
 </body>
 </html>
 

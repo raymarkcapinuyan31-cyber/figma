@@ -10,9 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const houseUnitError = document.getElementById('error-houseUnit');
   const streetNameError = document.getElementById('error-streetName');
   const barangayError = document.getElementById('error-barangay');
+  const additionalDetailsError = document.getElementById('error-additionalDetails');
   const cancelBtn = document.getElementById('cancelAddressBtn');
 
-  if (!form || !houseUnitInput || !streetNameInput || !barangaySelect || !additionalDetailsInput || !houseUnitError || !streetNameError || !barangayError || !cancelBtn || !usersDb || !usersDb.auth) return;
+  if (!form || !houseUnitInput || !streetNameInput || !barangaySelect || !additionalDetailsInput || !houseUnitError || !streetNameError || !barangayError || !additionalDetailsError || !cancelBtn || !usersDb || !usersDb.auth) return;
 
   const params = new URLSearchParams(window.location.search);
   const addressId = String(params.get('id') || '').trim();
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ns.clearFieldError(houseUnitInput, houseUnitError);
     ns.clearFieldError(streetNameInput, streetNameError);
     ns.clearFieldError(barangaySelect, barangayError);
+    ns.clearFieldError(additionalDetailsInput, additionalDetailsError);
   }
 
   function hasDigit(value) {
@@ -43,6 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isValidStreetNameFormat(value) {
     return /^[A-Za-z0-9.,'/\-\s]+$/.test(String(value || ''));
+  }
+
+  function isValidAdditionalDetailsFormat(value) {
+    return /^[A-Za-z0-9,\-\s]+$/.test(String(value || ''));
   }
 
   function fillForm(item) {
@@ -80,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const houseUnit = houseUnitInput.value.replace(/\s+/g, ' ').trim();
     const streetName = streetNameInput.value.replace(/\s+/g, ' ').trim();
     const barangay = barangaySelect.value.trim();
-    const additionalDetails = additionalDetailsInput.value.trim();
+    const additionalDetails = additionalDetailsInput.value.replace(/\s+/g, ' ').trim();
 
     clearErrors();
     let hasError = false;
@@ -106,10 +112,16 @@ document.addEventListener('DOMContentLoaded', () => {
       hasError = true;
     }
 
+    if (additionalDetails && !isValidAdditionalDetailsFormat(additionalDetails)) {
+      ns.setFieldError(additionalDetailsInput, additionalDetailsError, 'Landmark/details can only use letters, numbers, spaces, commas, and hyphens.');
+      hasError = true;
+    }
+
     if (hasError || !activeUser || !addressId) return;
 
     houseUnitInput.value = houseUnit;
     streetNameInput.value = streetName;
+    additionalDetailsInput.value = additionalDetails;
 
     const payload = { houseUnit, streetName, barangay, additionalDetails };
     await usersDb.updateAddress(activeUser.uid, addressId, payload);

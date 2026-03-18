@@ -59,15 +59,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let unsubscribeMessagesChat = null;
   let unsubscribeOwnPresence = null;
   let unsubscribePeerPresence = null;
+  let locationControllersInitialized = false;
+  let presenceTrackingDisabled = false;
   let forgotPasswordCooldownTimer = null;
   let activePeerPresenceUid = '';
   let activeMessagesRequestId = '';
   let activeAcceptedMessageRequests = [];
   const peerPresenceByUid = Object.create(null);
+  const customerNameByUid = Object.create(null);
+  const customerNameByEmail = Object.create(null);
 
   const provinceCityCache = new Map();
   const cityTownCache = new Map();
   const MAX_CHAT_ATTACHMENT_BYTES = 6 * 1024 * 1024;
+  const TECH_QUICK_UPDATE_TEMPLATES = [
+    { label: "I'm on my way", text: "I'm on my way to your location." },
+    { label: 'I have arrived', text: 'I have arrived at your location.' },
+    { label: 'Running 10-15 mins late', text: 'Running around 10-15 minutes late due to traffic. Thank you for your patience.' },
+    { label: 'Service completed', text: 'Service is completed. Please check and confirm. Thank you.' }
+  ];
 
   const STATUS_CLASSES = {
     pending: 'pending',
@@ -333,6 +343,12 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(value || '').trim().replace(/\s+/g, ' ');
   }
 
+  function looksLikeEmail(value) {
+    const text = normalizeSpaces(value).toLowerCase();
+    if (!text) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+  }
+
   function safeText(value) {
     if (value == null) return '';
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -407,7 +423,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     selectEl.innerHTML = options.join('');
-    selectEl.disabled = false;
+    const forcedDisabled = String(selectEl.getAttribute('data-force-disabled') || '').toLowerCase() === 'true';
+    selectEl.disabled = forcedDisabled;
   }
 
   function setSelectLoading(selectEl, label) {
@@ -769,6 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setInputValue('techOnboardMobile', displayMobile);
     const profileSkills = parseSkillsFromInput(details.skills || details.specialties || details.serviceCategories || details.fields || details.field || '');
     setSelectedSkills('techOnboardSkills', profileSkills);
+    ensureLocationControllersInitialized({ includeAccount: false, includeModal: true });
     if (modalLocationController) {
       modalLocationController.setValues({
         location: details.location || details.address || '',
@@ -811,15 +829,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const parts = normalized.split(' ').filter(Boolean);
     if (parts.length > 1 && parts.every((part) => part.length === 1)) {
-      return 'Enter a full name.';
+      return 'Enter full name.';
     }
 
     if (/\d/.test(normalized)) {
-      return 'Do not use numbers.';
+      return 'No numbers.';
     }
 
     if (!/^[A-Za-z\s-]+$/.test(normalized)) {
-      return 'Do not use special characters (only hyphen - is allowed).';
+      return 'No special characters (e.g., Anne-Marie).';
     }
 
     if (!NAME_REGEX.test(normalized)) {
@@ -905,6 +923,15 @@ document.addEventListener('DOMContentLoaded', () => {
     skillsWrap.classList.toggle('read-only', !!disabled);
   }
 
+  function setAccountLocationInputsDisabled(disabled) {
+    ['techProvince', 'techCity', 'techTown'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.setAttribute('data-force-disabled', disabled ? 'true' : 'false');
+      input.disabled = !!disabled;
+    });
+  }
+
   function toSimpleTechnicianId(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -941,6 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     setSkillsInputDisabled(true);
+    setAccountLocationInputsDisabled(true);
 
     if (editBtn) {
       editBtn.hidden = false;
@@ -978,6 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     setSkillsInputDisabled(!isEditing);
+    setAccountLocationInputsDisabled(!isEditing);
 
     if (editBtn) {
       editBtn.hidden = isEditing;
@@ -1442,6 +1471,24 @@ document.addEventListener('DOMContentLoaded', () => {
     return normalizeText(value).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  function isPermissionDeniedError(err) {
+    const code = String(err && err.code ? err.code : '').toLowerCase();
+    const message = String(err && err.message ? err.message : '').toLowerCase();
+    return code.includes('permission-denied') ||
+      code.includes('permission_denied') ||
+      message.includes('permission denied') ||
+      message.includes('permission_denied');
+  }
+
+  function getActiveSectionId() {
+    const active = document.querySelector('.sidebar [data-section].active');
+    return active && active.dataset ? String(active.dataset.section || '').trim() : 'request-list';
+  }
+
+  function isPersonalInfoPanelActive() {
+    return getActiveSectionId() === 'personal-information';
+  }
+
   function addDays(date, days) {
     const next = new Date(date);
     next.setDate(next.getDate() + days);
@@ -1495,6 +1542,133 @@ document.addEventListener('DOMContentLoaded', () => {
     return 'Technician';
   }
 
+  function buildPersonFullName(record) {
+    const source = record && typeof record === 'object' ? record : {};
+    const first = normalizeSpaces(source.first_name || source.firstName || '');
+    const last = normalizeSpaces(source.last_name || source.lastName || '');
+    const full = normalizeSpaces(`${first} ${last}`);
+    if (full) return full;
+
+    const direct = normalizeSpaces(
+      source.name
+      || source.fullName
+      || source.displayName
+      || source.customerName
+      || source.username
+      || source.userName
+      || ''
+    );
+    return direct;
+  }
+
+  function getRequestCustomerUid(item) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+    return normalizeSpaces(item && (item.customerId || item.customerUid || details.customerId || details.customerUid));
+  }
+
+  function getRequestCustomerEmail(item) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+    return normalizeText(item && (item.customerEmail || details.customerEmail)).toLowerCase();
+  }
+
+  function isGenericCustomerLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    return normalized === 'customer' || normalized === 'client' || normalized === 'user';
+  }
+
+  function getCustomerDisplayLabel(item) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+
+    const direct = normalizeSpaces(item && item.customerName ? item.customerName : details.customerName);
+    if (direct && !looksLikeEmail(direct) && !isGenericCustomerLabel(direct)) return direct;
+
+    const uid = getRequestCustomerUid(item);
+    if (uid && customerNameByUid[uid]) return customerNameByUid[uid];
+    if (uid && customerNameByUid[normalizeText(uid)]) return customerNameByUid[normalizeText(uid)];
+
+    const emailKey = getRequestCustomerEmail(item);
+    if (emailKey && customerNameByEmail[emailKey]) return customerNameByEmail[emailKey];
+
+    const explicitFullName = buildPersonFullName({
+      first_name: item && (item.customerFirstName || item.first_name),
+      last_name: item && (item.customerLastName || item.last_name)
+    }) || buildPersonFullName({
+      first_name: details.customerFirstName,
+      last_name: details.customerLastName
+    });
+    if (explicitFullName) return explicitFullName;
+
+    const email = normalizeSpaces(item && item.customerEmail ? item.customerEmail : details.customerEmail);
+    if (email) return email;
+
+    return 'Customer';
+  }
+
+  async function resolveCustomerNamesForRequests(items) {
+    if (!(usersDb && (typeof usersDb.getUserById === 'function' || typeof usersDb.getUserByEmail === 'function'))) return;
+
+    const list = Array.isArray(items) ? items : [];
+    const uniqueUids = Array.from(new Set(list
+      .map((entry) => getRequestCustomerUid(entry))
+      .filter(Boolean)
+      .filter((uid) => !customerNameByUid[uid])));
+    const uniqueEmails = Array.from(new Set(list
+      .map((entry) => getRequestCustomerEmail(entry))
+      .filter(Boolean)
+      .filter((email) => !customerNameByEmail[email])));
+
+    if (!uniqueUids.length && !uniqueEmails.length) return;
+
+    const uidTasks = uniqueUids.map(async (uid) => {
+      try {
+        if (typeof usersDb.getUserById !== 'function') return;
+        const profile = await usersDb.getUserById(uid);
+        const fullName = buildPersonFullName(profile);
+        if (fullName) {
+          customerNameByUid[uid] = fullName;
+          customerNameByUid[normalizeText(uid)] = fullName;
+          const email = normalizeText(profile && (profile.email || profile.emailAddress || profile.email_address)).toLowerCase();
+          if (email) customerNameByEmail[email] = fullName;
+        }
+      } catch (_) {
+      }
+    });
+
+    const emailTasks = uniqueEmails.map(async (email) => {
+      try {
+        if (typeof usersDb.getUserByEmail !== 'function') return;
+        const profile = await usersDb.getUserByEmail(email);
+        const fullName = buildPersonFullName(profile);
+        if (fullName) {
+          customerNameByEmail[email] = fullName;
+          const uid = normalizeSpaces(profile && (profile.uid || profile.id));
+          if (uid) customerNameByUid[uid] = fullName;
+          if (uid) customerNameByUid[normalizeText(uid)] = fullName;
+        }
+      } catch (_) {
+      }
+    });
+
+    await Promise.all([...uidTasks, ...emailTasks]);
+  }
+
+  function applyResolvedCustomerNames(items) {
+    const list = Array.isArray(items) ? items : [];
+    list.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const resolved = getCustomerDisplayLabel(entry);
+      if (resolved && !looksLikeEmail(resolved) && !isGenericCustomerLabel(resolved)) {
+        entry.customerName = resolved;
+      }
+    });
+  }
+
   function canOpenChatByStatus(status) {
     return ['accepted', 'confirmed', 'in-progress', 'ongoing'].includes(String(status || '').toLowerCase());
   }
@@ -1539,6 +1713,38 @@ document.addEventListener('DOMContentLoaded', () => {
     return elapsed ? `Offline ${elapsed}` : 'Offline';
   }
 
+  function ensureQuickUpdateContainer(form, containerId) {
+    if (!form || !form.parentElement) return null;
+    const existing = document.getElementById(containerId);
+    if (existing) return existing;
+
+    const container = document.createElement('div');
+    container.id = containerId;
+    container.className = 'tech-quick-update-wrap';
+    form.parentElement.insertBefore(container, form);
+    return container;
+  }
+
+  function renderQuickUpdateButtons(container, canUse, onSelect) {
+    if (!container) return;
+    const handler = typeof onSelect === 'function' ? onSelect : async function () {};
+
+    container.innerHTML = TECH_QUICK_UPDATE_TEMPLATES.map((template, index) => {
+      return `<button type="button" class="tech-quick-update-btn" data-quick-update-index="${index}" ${canUse ? '' : 'disabled'}>${escapeHtml(template.label)}</button>`;
+    }).join('');
+
+    const buttons = Array.from(container.querySelectorAll('button[data-quick-update-index]'));
+    buttons.forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        const index = Number(button.getAttribute('data-quick-update-index'));
+        const selected = TECH_QUICK_UPDATE_TEMPLATES[index];
+        if (!selected || !selected.text) return;
+        await handler(String(selected.text));
+      });
+    });
+  }
+
   function stopPeerPresenceSubscription() {
     if (typeof unsubscribePeerPresence === 'function') {
       unsubscribePeerPresence();
@@ -1556,6 +1762,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function startOwnPresenceTracking(profile) {
     stopOwnPresenceTracking();
+    if (presenceTrackingDisabled) return;
 
     const uid = String(profile && profile.uid ? profile.uid : '').trim();
     if (!uid) return;
@@ -1579,19 +1786,28 @@ document.addEventListener('DOMContentLoaded', () => {
         role: 'technician',
         state: 'offline',
         lastChanged: serverTimestamp
-      });
-
-      presenceRef.set({
-        uid,
-        role: 'technician',
-        state: 'online',
-        lastChanged: serverTimestamp
+      }).then(() => {
+        return presenceRef.set({
+          uid,
+          role: 'technician',
+          state: 'online',
+          lastChanged: serverTimestamp
+        });
+      }).catch((err) => {
+        if (!isPermissionDeniedError(err)) return;
+        presenceTrackingDisabled = true;
+        stopOwnPresenceTracking();
       });
     };
 
-    connectedRef.on('value', onConnected);
+    connectedRef.on('value', onConnected, (err) => {
+      if (!isPermissionDeniedError(err)) return;
+      presenceTrackingDisabled = true;
+      stopOwnPresenceTracking();
+    });
     unsubscribeOwnPresence = () => {
       connectedRef.off('value', onConnected);
+      if (presenceTrackingDisabled) return;
       presenceRef.set({
         uid,
         role: 'technician',
@@ -1632,7 +1848,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
       ? usersDb.firebase.database()
       : null;
-    if (!rtdb) return;
+    if (!rtdb || presenceTrackingDisabled) return;
 
     activePeerPresenceUid = uid;
     const ref = rtdb.ref(`presence/${uid}`);
@@ -1733,6 +1949,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hint = document.getElementById('techRequestChatHint');
     const list = document.getElementById('techRequestChatList');
     if (!wrap || !form || !attachBtn || !attachInput || !input || !sendBtn || !hint || !list) return;
+    const quickWrap = ensureQuickUpdateContainer(form, 'techRequestChatQuickUpdates');
 
     stopRequestChatSubscription();
 
@@ -1745,6 +1962,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     wrap.hidden = false;
     if (!canUse) {
+      renderQuickUpdateButtons(quickWrap, false, null);
       input.value = '';
       input.disabled = true;
       sendBtn.disabled = true;
@@ -1763,6 +1981,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? usersDb.firebase.database()
       : null;
     if (!rtdb) {
+      renderQuickUpdateButtons(quickWrap, false, null);
       input.disabled = true;
       sendBtn.disabled = true;
       attachBtn.disabled = true;
@@ -1770,7 +1989,28 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const canStillUseChat = () => {
+      const latest = technicianRequestLookup.get(requestId) || item || {};
+      const latestStatus = normalizeStatus(latest);
+      const mine = isAssignedStrictlyToTech(latest || {}, activeTechnicianProfile || {});
+      return !!requestId && mine && canOpenChatByStatus(latestStatus);
+    };
+
+    const lockClosedChat = () => {
+      input.disabled = true;
+      sendBtn.disabled = true;
+      attachBtn.disabled = true;
+      renderQuickUpdateButtons(quickWrap, false, null);
+      hint.textContent = 'Chat is closed because this job is already completed or no longer active.';
+      list.innerHTML = '<div class="tech-chat-empty">Chat is now closed for this request.</div>';
+    };
+
     const sendMessage = async (payload) => {
+      if (!canStillUseChat()) {
+        lockClosedChat();
+        return;
+      }
+
       const rawText = payload && typeof payload === 'object' ? payload.text : payload;
       const text = normalizeSpaces(rawText);
       const attachment = payload && typeof payload === 'object' ? payload.attachment : null;
@@ -1779,6 +2019,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       sendBtn.disabled = true;
       attachBtn.disabled = true;
+      const quickButtons = quickWrap
+        ? Array.from(quickWrap.querySelectorAll('button[data-quick-update-index]'))
+        : [];
+      quickButtons.forEach((button) => {
+        button.disabled = true;
+      });
       try {
         const messagePayload = {
           requestId,
@@ -1803,10 +2049,21 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (_) {
         window.alert('Failed to send message. Please try again.');
       } finally {
-        sendBtn.disabled = false;
-        attachBtn.disabled = false;
+        if (canStillUseChat()) {
+          sendBtn.disabled = false;
+          attachBtn.disabled = false;
+          quickButtons.forEach((button) => {
+            button.disabled = false;
+          });
+        } else {
+          lockClosedChat();
+        }
       }
     };
+
+    renderQuickUpdateButtons(quickWrap, true, async (text) => {
+      await sendMessage({ text });
+    });
 
     const ref = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
     const onValue = (snapshot) => {
@@ -1904,9 +2161,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const id = String(item && item.id ? item.id : '');
       const activeClass = id && id === activeMessagesRequestId ? ' active' : '';
       const label = getLogicalMessageTitle(item);
-      const customer = item && (item.customerName || item.customerEmail) ? (item.customerName || item.customerEmail) : 'Customer';
+      const customer = getCustomerDisplayLabel(item);
       const schedule = getScheduleText(item) || 'No schedule set';
-      return `<button type="button" class="tech-thread-item${activeClass}" data-message-request-id="${escapeHtml(id)}"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(customer)}</span><span>${escapeHtml(schedule)}</span></button>`;
+      const status = formatStatus(normalizeStatus(item));
+      return `<button type="button" class="tech-thread-item${activeClass}" data-message-request-id="${escapeHtml(id)}"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(customer)}</span><span>${escapeHtml(schedule)}</span><span>${escapeHtml(`Status: ${status}`)}</span></button>`;
     }).join('');
   }
 
@@ -1949,6 +2207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const meta = document.getElementById('techMessagesRequestMeta');
     const presence = document.getElementById('techMessagesPeerPresence');
     if (!list || !attachBtn || !attachInput || !input || !sendBtn || !form || !title || !meta || !presence) return;
+    const quickWrap = ensureQuickUpdateContainer(form, 'techMessagesQuickUpdates');
 
     stopMessagesChatSubscription();
 
@@ -1963,6 +2222,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bindPeerPresence(item);
 
     if (!canUse) {
+      renderQuickUpdateButtons(quickWrap, false, null);
       renderMessagesConversationState(false);
       return;
     }
@@ -1977,6 +2237,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ? usersDb.firebase.database()
       : null;
     if (!rtdb) {
+      renderQuickUpdateButtons(quickWrap, false, null);
       input.disabled = true;
       sendBtn.disabled = true;
       attachBtn.disabled = true;
@@ -1984,7 +2245,27 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const canStillUseChat = () => {
+      const latest = technicianRequestLookup.get(requestId) || item || {};
+      const latestStatus = normalizeStatus(latest);
+      const mine = isAssignedStrictlyToTech(latest || {}, activeTechnicianProfile || {});
+      return !!requestId && !!technicianUid && mine && isAcceptedThreadStatus(latestStatus);
+    };
+
+    const lockClosedChat = () => {
+      input.disabled = true;
+      sendBtn.disabled = true;
+      attachBtn.disabled = true;
+      renderQuickUpdateButtons(quickWrap, false, null);
+      list.innerHTML = '<div class="tech-chat-empty">Chat is closed because this job is already completed or no longer active.</div>';
+    };
+
     const sendMessage = async (payload) => {
+      if (!canStillUseChat()) {
+        lockClosedChat();
+        return;
+      }
+
       const rawText = payload && typeof payload === 'object' ? payload.text : payload;
       const text = normalizeSpaces(rawText);
       const attachment = payload && typeof payload === 'object' ? payload.attachment : null;
@@ -1993,6 +2274,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       sendBtn.disabled = true;
       attachBtn.disabled = true;
+      const quickButtons = quickWrap
+        ? Array.from(quickWrap.querySelectorAll('button[data-quick-update-index]'))
+        : [];
+      quickButtons.forEach((button) => {
+        button.disabled = true;
+      });
       try {
         const messagePayload = {
           requestId,
@@ -2017,10 +2304,21 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (_) {
         window.alert('Failed to send message. Please try again.');
       } finally {
-        sendBtn.disabled = false;
-        attachBtn.disabled = false;
+        if (canStillUseChat()) {
+          sendBtn.disabled = false;
+          attachBtn.disabled = false;
+          quickButtons.forEach((button) => {
+            button.disabled = false;
+          });
+        } else {
+          lockClosedChat();
+        }
       }
     };
+
+    renderQuickUpdateButtons(quickWrap, true, async (text) => {
+      await sendMessage({ text });
+    });
 
     const ref = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
     const onValue = (snapshot) => {
@@ -2184,7 +2482,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getRequestSubtext(item) {
-    const customer = item.customerName || item.customerEmail || 'Customer';
+    const customer = getCustomerDisplayLabel(item);
     const schedule = getScheduleText(item) || 'No schedule set';
     return `${customer} • ${schedule}`;
   }
@@ -2258,13 +2556,16 @@ document.addEventListener('DOMContentLoaded', () => {
       value.label,
       value.line1,
       value.line2,
+      value.houseUnit,
       value.street,
+      value.streetName,
       value.purok,
       value.subdivision,
       value.barangay,
       value.district,
       value.city,
-      value.province
+      value.province,
+      value.additionalDetails
     ].map((entry) => normalizeSpaces(entry)).filter(Boolean);
     return normalizeSpaces(parts.join(', '));
   }
@@ -2294,6 +2595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (direct) return direct;
 
     const objectCandidates = [
+      item && item.location,
       item && item.selectedAddress,
       item && item.addressDetails,
       item && item.serviceAddress,
@@ -2322,6 +2624,31 @@ document.addEventListener('DOMContentLoaded', () => {
     return composed || '';
   }
 
+  function getTechnicianNameCandidates(profile) {
+    const source = profile && typeof profile === 'object' ? profile : {};
+    const names = [
+      buildPersonFullName(source),
+      normalizeSpaces(source.name || source.fullName || source.displayName || ''),
+      normalizeSpaces(source.first_name || source.firstName || ''),
+      normalizeSpaces(source.last_name || source.lastName || '')
+    ].filter(Boolean);
+
+    return Array.from(new Set(names.map((entry) => normalizeText(entry)).filter(Boolean)));
+  }
+
+  function getRequestAssignedNameCandidates(item, details) {
+    const request = item && typeof item === 'object' ? item : {};
+    const info = details && typeof details === 'object' ? details : {};
+    const names = [
+      normalizeSpaces(request.assignedTechnicianName || request.technicianName || ''),
+      normalizeSpaces(info.selectedTechnicianName || ''),
+      normalizeSpaces(info.technicianName || ''),
+      normalizeSpaces(info.assignedTechnicianName || '')
+    ].filter(Boolean);
+
+    return Array.from(new Set(names.map((entry) => normalizeText(entry)).filter(Boolean)));
+  }
+
   function isDagupanLocation(locationText) {
     const normalized = normalizeText(locationText);
     return normalized.includes('dagupan city') || /\bdagupan\b/.test(normalized);
@@ -2332,50 +2659,77 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function isAssignedToTech(item, technicianProfile) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
     const uid = String(technicianProfile && technicianProfile.uid ? technicianProfile.uid : '').toLowerCase();
+    const profileId = String(technicianProfile && technicianProfile.id ? technicianProfile.id : '').toLowerCase();
     const email = String(technicianProfile && technicianProfile.email ? technicianProfile.email : '').toLowerCase();
 
     const uidCandidates = [
       item.assignedTechnicianId,
       item.technicianId,
       item.assignedToUid,
-      item.assignedTo
+      item.assignedTo,
+      details.selectedTechnicianId
     ].map((v) => String(v || '').toLowerCase()).filter(Boolean);
 
     const emailCandidates = [
       item.assignedTechnicianEmail,
       item.technicianEmail,
-      item.assignedToEmail
+      item.assignedToEmail,
+      details.selectedTechnicianEmail
     ].map((v) => String(v || '').toLowerCase()).filter(Boolean);
 
     if (uid && uidCandidates.includes(uid)) return true;
+    if (profileId && uidCandidates.includes(profileId)) return true;
     if (email && emailCandidates.includes(email)) return true;
+
+    const techNames = getTechnicianNameCandidates(technicianProfile);
+    const requestNames = getRequestAssignedNameCandidates(item, details);
+    if (techNames.length && requestNames.some((name) => techNames.includes(name))) return true;
+
     return false;
   }
 
   function isAssignedStrictlyToTech(item, technicianProfile) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
     const uid = normalizeText(technicianProfile && technicianProfile.uid ? technicianProfile.uid : '');
+    const profileId = normalizeText(technicianProfile && technicianProfile.id ? technicianProfile.id : '');
     const email = normalizeText(technicianProfile && technicianProfile.email ? technicianProfile.email : '');
 
     const uidCandidates = [
       item.assignedTechnicianId,
       item.technicianId,
       item.assignedToUid,
-      item.assignedTo
+      item.assignedTo,
+      details.selectedTechnicianId
     ].map(normalizeText).filter(Boolean);
 
     const emailCandidates = [
       item.assignedTechnicianEmail,
       item.technicianEmail,
-      item.assignedToEmail
+      item.assignedToEmail,
+      details.selectedTechnicianEmail
     ].map(normalizeText).filter(Boolean);
 
     if (uid && uidCandidates.includes(uid)) return true;
+    if (profileId && uidCandidates.includes(profileId)) return true;
     if (email && emailCandidates.includes(email)) return true;
+
+    const techNames = getTechnicianNameCandidates(technicianProfile);
+    const requestNames = getRequestAssignedNameCandidates(item, details);
+    if (techNames.length && requestNames.some((name) => techNames.includes(name))) return true;
+
     return false;
   }
 
   function hasAnyAssignedTechnician(item) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
     return [
       item && item.assignedTechnicianId,
       item && item.technicianId,
@@ -2383,7 +2737,9 @@ document.addEventListener('DOMContentLoaded', () => {
       item && item.assignedTo,
       item && item.assignedTechnicianEmail,
       item && item.technicianEmail,
-      item && item.assignedToEmail
+      item && item.assignedToEmail,
+      details && details.selectedTechnicianId,
+      details && details.selectedTechnicianEmail
     ].some((entry) => normalizeText(entry));
   }
 
@@ -2691,7 +3047,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function canStartTaskNow(item, now = new Date()) {
     const scheduledAt = getScheduledStartDateTime(item);
-    if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return false;
+    // Allow legacy requests without a valid schedule to proceed instead of getting stuck.
+    if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return true;
     return now.getTime() >= scheduledAt.getTime();
   }
 
@@ -2725,15 +3082,44 @@ document.addEventListener('DOMContentLoaded', () => {
       return cachedRealtimeRequests;
     }
 
-    if (!(usersDb && typeof usersDb.getAllRequests === 'function')) {
-      return [];
+    if (usersDb && typeof usersDb.getAllRequests === 'function') {
+      try {
+        const rows = await usersDb.getAllRequests();
+        return Array.isArray(rows) ? rows : [];
+      } catch (_) {
+      }
     }
 
-    return await usersDb.getAllRequests();
+    return await getRequestsDirectFromRealtime();
+  }
+
+  async function getRequestsDirectFromRealtime() {
+    const firebaseNs = usersDb && usersDb.firebase ? usersDb.firebase : window.firebase;
+    if (!firebaseNs || typeof firebaseNs.database !== 'function') return [];
+
+    try {
+      const db = firebaseNs.database();
+      const snapshot = await db.ref('requests').once('value');
+      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+      return Object.keys(value).map((id) => {
+        const data = value[id] && typeof value[id] === 'object' ? value[id] : {};
+        return Object.assign({ id, requestId: String(data.requestId || id) }, data);
+      });
+    } catch (_) {
+      return [];
+    }
   }
 
   function startRealtimeRequestsForProfile(profile) {
-    if (!(usersDb && typeof usersDb.subscribeAllRequests === 'function')) return;
+    if (!(usersDb && typeof usersDb.subscribeAllRequests === 'function')) {
+      getRequestsDirectFromRealtime().then((rows) => {
+        cachedRealtimeRequests = Array.isArray(rows) ? rows : [];
+        loadTechnicianOverview(profile || activeTechnicianProfile || {}, cachedRealtimeRequests);
+      }).catch(() => {
+        cachedRealtimeRequests = null;
+      });
+      return;
+    }
 
     if (typeof unsubscribeTechRequests === 'function') {
       unsubscribeTechRequests();
@@ -2745,6 +3131,11 @@ document.addEventListener('DOMContentLoaded', () => {
       loadTechnicianOverview(profile || activeTechnicianProfile || {}, cachedRealtimeRequests);
     }, () => {
       cachedRealtimeRequests = null;
+      getRequestsDirectFromRealtime().then((rows) => {
+        cachedRealtimeRequests = Array.isArray(rows) ? rows : [];
+        loadTechnicianOverview(profile || activeTechnicianProfile || {}, cachedRealtimeRequests);
+      }).catch(() => {
+      });
     });
   }
 
@@ -2753,7 +3144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!list) return;
 
     if (!Array.isArray(items) || !items.length) {
-      list.innerHTML = '<div class="tech-empty">No assigned jobs yet.</div>';
+      list.innerHTML = '<div class="tech-empty">No open jobs right now.</div>';
       return;
     }
 
@@ -2763,16 +3154,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const rating = getRating(item);
       const showRating = (status === 'completed' || status === 'finished') && Number.isFinite(rating) && rating > 0;
       const ratingHtml = showRating ? `<span class="tech-rating">★ ${rating.toFixed(1)}</span>` : '';
-      const strictlyMine = isAssignedStrictlyToTech(item || {}, activeTechnicianProfile || {});
       let actionButtons = '';
       if (status === 'offered' || status === 'pending') {
-        if (strictlyMine) {
-          actionButtons = `<button type="button" class="tech-action-btn start" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button>`;
-        } else {
-          actionButtons = `<button type="button" class="tech-action-btn start" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
-        }
+        actionButtons = `<button type="button" class="tech-action-btn start" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
       } else if (status === 'accepted' || status === 'confirmed') {
-        actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
+        if (canStartTaskNow(item)) {
+          actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
+        } else {
+          actionButtons = '<button type="button" class="tech-action-btn start" disabled title="You can start this task at its scheduled time.">Scheduled</button>';
+        }
       } else if (status === 'in-progress' || status === 'ongoing') {
         actionButtons = `<button type="button" class="tech-action-btn done" data-action="done" data-request-id="${escapeHtml(item.id || '')}">Done</button>`;
       }
@@ -2845,7 +3235,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = normalizeStatus(item);
         const statusClass = STATUS_CLASSES[status] || 'pending';
         const timingMeta = getQueueTimingMeta(item, now);
-        const customer = item.customerName || item.customerEmail || 'Customer';
+        const customer = getCustomerDisplayLabel(item);
         const schedule = getScheduleText(item) || 'No schedule set';
         const location = getRequestLocationText(item) || 'No location provided';
         const serviceType = getServiceType(item);
@@ -2915,7 +3305,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       return `
         <div class="request-row" data-request-id="${escapeHtml(item.id || '')}">
-          <span class="request-name">${escapeHtml(getRequestLabel(item))} • ${escapeHtml(item.customerName || item.customerEmail || 'Customer')}</span>
+          <span class="request-name">${escapeHtml(getRequestLabel(item))} • ${escapeHtml(getCustomerDisplayLabel(item))}</span>
           <span>
             <span class="status-badge ${statusClass}">${escapeHtml(formatStatus(status))}</span>
             ${actionButtons}
@@ -2929,6 +3319,13 @@ document.addEventListener('DOMContentLoaded', () => {
   async function updateRequestStatus(requestId, nextStatus) {
     const id = String(requestId || '');
     if (!id || !nextStatus) return false;
+
+    if (String(nextStatus).toLowerCase() === 'in-progress') {
+      const currentItem = technicianRequestLookup.get(id);
+      if (currentItem && !canStartTaskNow(currentItem)) {
+        return false;
+      }
+    }
 
     if (id.startsWith('sample_')) {
       const previous = sampleRequestOverrides.get(id) || {};
@@ -2951,12 +3348,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!current || typeof current !== 'object') return current;
 
             const status = normalizeStatus(current);
+            const details = current && current.requestDetails && typeof current.requestDetails === 'object'
+              ? current.requestDetails
+              : {};
             const assignedId = String(current.assignedTechnicianId || current.technicianId || '').trim();
             const assignedEmail = String(current.assignedTechnicianEmail || current.technicianEmail || '').trim().toLowerCase();
-            const alreadyAssigned = !!(assignedId || assignedEmail);
+            const selectedId = String(details.selectedTechnicianId || '').trim();
+            const selectedEmail = String(details.selectedTechnicianEmail || '').trim().toLowerCase();
+            const alreadyAssigned = !!(assignedId || assignedEmail || selectedId || selectedEmail);
+            const isAssignedToCurrentTech =
+              (assignedId && assignedId === techUid) ||
+              (assignedEmail && assignedEmail === techEmail) ||
+              (selectedId && selectedId === techUid) ||
+              (selectedEmail && selectedEmail === techEmail);
 
-            if (alreadyAssigned && assignedId === techUid) {
+            if (alreadyAssigned && isAssignedToCurrentTech) {
               didClaim = true;
+              if (status === 'offered' || status === 'pending') {
+                current.status = 'accepted';
+              }
+              current.assignedTechnicianId = techUid;
+              current.technicianId = techUid;
+              current.assignedTechnicianEmail = techEmail;
+              current.technicianEmail = techEmail;
+              current.technicianUpdatedAt = Date.now();
               return current;
             }
 
@@ -2981,6 +3396,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!didClaim || !result || !result.committed) {
             window.alert('Another technician accepted this request first.');
             return false;
+          }
+
+          if (usersDb && typeof usersDb.syncScheduleLockForRequest === 'function') {
+            try {
+              await usersDb.syncScheduleLockForRequest(id, 'accepted');
+            } catch (_) {
+            }
           }
 
           return true;
@@ -3028,11 +3450,11 @@ document.addEventListener('DOMContentLoaded', () => {
     setDetailText('techDetailRequest', getRequestLabel(item));
     setDetailText('techDetailRequestId', formatRequestCode(item));
     setDetailText('techDetailStatus', formatStatus(normalizeStatus(item)));
-    setDetailText('techDetailCustomer', safeText(item.customerName) || safeText(item.customerEmail) || safeText(details.customerName) || safeText(details.customerEmail) || 'Customer');
+    setDetailText('techDetailCustomer', getCustomerDisplayLabel(item));
     setDetailText('techDetailServiceType', getServiceType(item));
     setDetailText('techDetailCategory', getCategoryLabel(item));
     setDetailText('techDetailRepairConcern', getRepairConcern(item));
-    setDetailText('techDetailSchedule', safeText(item.preferredSchedule) || safeText(item.preferred_datetime) || safeText(details.preferredSchedule) || safeText(details.preferred_datetime) || 'No schedule set');
+    setDetailText('techDetailSchedule', getScheduleText(item) || safeText(details.preferredSchedule) || safeText(details.preferred_datetime) || 'No schedule set');
     setDetailText('techDetailLocation', getRequestLocationText(item) || 'No location provided');
     setDetailText('techDetailDetails', getRequestDetailsText(item));
     setDetailText('techDetailMedia', getMediaAttachmentSummary(item));
@@ -3110,13 +3532,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (chatBtn) {
-      chatBtn.addEventListener('click', () => {
-        const requestId = String(chatBtn.getAttribute('data-request-id') || '').trim();
-        if (!requestId) return;
+      chatBtn.addEventListener('click', (event) => {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+        if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
 
-        activeMessagesRequestId = requestId;
+        const requestId = String(
+          chatBtn.getAttribute('data-request-id')
+          || activeDetailRequestId
+          || ''
+        ).trim();
+
         closeRequestDetails();
         showSection('messages-page');
+
+        if (requestId) {
+          activeMessagesRequestId = requestId;
+        }
+
         renderMessagesPanel(activeTechnicianProfile || {}, Array.from(technicianRequestLookup.values()));
       });
     }
@@ -3146,6 +3578,12 @@ document.addEventListener('DOMContentLoaded', () => {
           window.alert('Finish your current in-progress job before starting another one.');
           return;
         }
+
+        const targetItem = technicianRequestLookup.get(requestId);
+        if (targetItem && !canStartTaskNow(targetItem)) {
+          window.alert('This job can only be started at its scheduled time.');
+          return;
+        }
       }
 
       let nextStatus = '';
@@ -3154,6 +3592,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (action === 'done') nextStatus = 'completed';
 
       if (action === 'decline') {
+        actionBtn.disabled = true;
+        const ok = await updateRequestStatus(requestId, 'declined');
+        actionBtn.disabled = false;
+        if (!ok) return;
         markRequestDeclinedForTechnician(requestId, activeTechnicianProfile || {});
         await loadTechnicianOverview(activeTechnicianProfile || {});
         return;
@@ -3180,8 +3622,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item && item.id) technicianRequestLookup.set(String(item.id), item);
     });
 
-    setText('techStatTotal', String(sampleRequests.length));
-    setText('techStatAssigned', String(sampleRequests.length));
+    const sampleOpenPoolCount = sampleRequests.filter((item) => {
+      const status = normalizeStatus(item);
+      if (status !== 'pending' && status !== 'offered') return false;
+      return !hasAnyAssignedTechnician(item || {});
+    }).length;
+
+    setText('techStatAssigned', String(sampleOpenPoolCount));
     setText('techStatInProgress', String(sampleRequests.filter((item) => {
       const status = normalizeStatus(item);
       return status === 'accepted' || status === 'confirmed' || status === 'in-progress' || status === 'ongoing';
@@ -3212,6 +3659,8 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
 
+    setText('techStatTotal', String(jobsForYou.length));
+
     const today = getTodayDate();
     const activeJobs = sampleRequests.filter((item) => {
       const status = normalizeStatus(item);
@@ -3221,7 +3670,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return requestDate instanceof Date && isSameCalendarDate(requestDate, today);
     }).sort((left, right) => getRequestDateTime(left).getTime() - getRequestDateTime(right).getTime());
 
-    renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs for you.');
+    renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs.');
     renderSimpleRequestRows('techHistoryJobsList', [], 'No history jobs yet.');
 
     const scheduleItems = sampleRequests.filter((item) => {
@@ -3280,7 +3729,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <article class="tech-event-card ${escapeHtml(status)}">
               <div class="tech-event-time">${escapeHtml(formatHourLabel(hour))}</div>
               <div class="tech-event-name">${escapeHtml(getRequestLabel(item))}</div>
-              <div class="tech-event-user">${escapeHtml(item.customerName || item.customerEmail || 'Booked User')}</div>
+              <div class="tech-event-user">${escapeHtml(getCustomerDisplayLabel(item) || 'Booked User')}</div>
               <div><button type="button" class="tech-view-btn" data-request-id="${escapeHtml(item.id || '')}">View</button></div>
             </article>
           `;
@@ -3414,8 +3863,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       activeTechnicianProfile = technicianProfile || {};
       setGreeting(activeTechnicianProfile);
-      fillAccountForm(activeTechnicianProfile);
-      setAccountFormEnabled(!!(activeTechnicianProfile && activeTechnicianProfile.uid));
+      if (isPersonalInfoPanelActive() || isAccountEditMode) {
+        fillAccountForm(activeTechnicianProfile);
+        setAccountFormEnabled(!!(activeTechnicianProfile && activeTechnicianProfile.uid));
+      }
       maybeShowTechnicianOnboarding(activeTechnicianProfile);
       const allRequests = Array.isArray(sourceRequests) ? sourceRequests : await getAllRequests();
       const techSkills = getTechnicianSkills(technicianProfile, technicianProfile && technicianProfile.email);
@@ -3424,11 +3875,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const fromRealSource = Array.isArray(allRequests) ? allRequests : [];
       let qualified = fromRealSource
         .filter((item) => matchesTechnicianSkill(item || {}, effectiveSkills) || isAssignedToTech(item || {}, technicianProfile || {}))
-        .filter((item) => isAdminReviewedRequestForTechnician(item))
         .filter((item) => {
           const status = normalizeStatus(item);
-          const strictlyMine = isAssignedStrictlyToTech(item || {}, technicianProfile || {});
-          if (strictlyMine) {
+          const assignedToMe = isAssignedToTech(item || {}, technicianProfile || {});
+          if (assignedToMe) {
             clearDeclinedMarkForTechnician(item && item.id, technicianProfile || {});
             return true;
           }
@@ -3436,6 +3886,9 @@ document.addEventListener('DOMContentLoaded', () => {
           // Only surface open queue jobs to non-assigned technicians.
           // Requests already accepted/assigned by another technician must not be counted in "Jobs for You".
           if (status === 'offered' || status === 'pending') {
+            const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+              ? item.requestDetails
+              : {};
             const hasAssignee = [
               item && item.assignedTechnicianId,
               item && item.technicianId,
@@ -3443,7 +3896,9 @@ document.addEventListener('DOMContentLoaded', () => {
               item && item.assignedTo,
               item && item.assignedTechnicianEmail,
               item && item.technicianEmail,
-              item && item.assignedToEmail
+              item && item.assignedToEmail,
+              details && details.selectedTechnicianId,
+              details && details.selectedTechnicianEmail
             ].some((entry) => normalizeText(entry));
 
             if (hasAssignee) return false;
@@ -3456,10 +3911,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const sampleQualified = sampleRequests
         .filter((item) => matchesTechnicianSkill(item || {}, effectiveSkills) || isAssignedToTech(item || {}, technicianProfile || {}))
         .filter((item) => isDagupanRequest(item))
-        .filter((item) => isAdminReviewedRequestForTechnician(item));
+        ;
       if (FORCE_SAMPLE_REQUESTS) {
         qualified = [...qualified, ...sampleQualified];
       }
+
+      await resolveCustomerNamesForRequests(qualified);
+      applyResolvedCustomerNames(qualified);
 
       technicianRequestLookup = new Map();
       qualified.forEach((item) => {
@@ -3479,7 +3937,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const sourceForJobs = strictlyAssigned.length ? strictlyAssigned : assigned;
 
-      renderMessagesPanel(technicianProfile || {}, sourceForJobs);
+      if (getActiveSectionId() === 'messages-page') {
+        renderMessagesPanel(technicianProfile || {}, sourceForJobs);
+      }
 
       renderSkillChips(effectiveSkills);
       renderProfileCompletionPrompt(effectiveSkills);
@@ -3499,8 +3959,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
         : '--';
 
-      setText('techStatTotal', String(qualified.length));
-      setText('techStatAssigned', String(assigned.length));
+      const openPoolCount = qualified.filter((item) => {
+        const status = normalizeStatus(item);
+        if (status !== 'pending' && status !== 'offered') return false;
+        return !hasAnyAssignedTechnician(item || {});
+      }).length;
+
+      setText('techStatAssigned', String(openPoolCount));
       setText('techStatInProgress', String(inProgressCount));
       setText('techStatCompleted', String(completedCount));
       setText('techStatRating', average === '--' ? '--' : `${average} ★`);
@@ -3511,7 +3976,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const status = normalizeStatus(item);
           const strictlyMine = isAssignedStrictlyToTech(item || {}, technicianProfile || {});
 
-          if ((status === 'offered' || status === 'pending') && !strictlyMine) {
+          if (status === 'offered' || status === 'pending') {
             return true;
           }
 
@@ -3522,16 +3987,20 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!(requestDate instanceof Date)) return true;
           return requestDate.getTime() >= today.getTime();
         }).sort((left, right) => toTimeValue(right.createdAt) - toTimeValue(left.createdAt));
-        renderAssignedRequests(requestsForAcceptance);
+        if (getActiveSectionId() === 'request-list') {
+          renderAssignedRequests(requestsForAcceptance);
+        }
 
       const jobsForYou = qualified.filter((item) => {
         const status = normalizeStatus(item);
-        const strictlyMine = isAssignedStrictlyToTech(item || {}, technicianProfile || {});
-        if (strictlyMine) return false;
+        const assignedToMe = isAssignedToTech(item || {}, technicianProfile || {});
         if (status !== 'offered' && status !== 'pending') return false;
+        if (assignedToMe) return true;
         if (hasAnyAssignedTechnician(item || {})) return false;
         return true;
       }).sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
+
+      setText('techStatTotal', String(jobsForYou.length));
 
       const activeJobs = sourceForJobs.filter((item) => {
         const status = normalizeStatus(item);
@@ -3558,8 +4027,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
       }).sort((left, right) => toTimeValue(right.createdAt) - toTimeValue(left.createdAt));
 
-      renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs for you.');
-      renderSimpleRequestRows('techHistoryJobsList', historyJobs, 'No history jobs yet.');
+      if (getActiveSectionId() === 'accepted-request') {
+        renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs.');
+      }
+      if (getActiveSectionId() === 'history-request') {
+        renderSimpleRequestRows('techHistoryJobsList', historyJobs, 'No history jobs yet.');
+      }
 
       const scheduleItems = sourceForJobs
         .filter((item) => {
@@ -3568,16 +4041,41 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .sort((left, right) => getRequestDateTime(left).getTime() - getRequestDateTime(right).getTime());
 
-      renderSchedule(scheduleItems);
-    } catch (_) {
+      if (getActiveSectionId() === 'schedule-page') {
+        renderSchedule(scheduleItems);
+      }
+    } catch (error) {
+      console.error('Technician overview sync failed.', error);
       activeTechnicianProfile = technicianProfile || {};
       setGreeting(activeTechnicianProfile);
-      fillAccountForm(activeTechnicianProfile);
-      setAccountFormEnabled(!!(activeTechnicianProfile && activeTechnicianProfile.uid));
+      if (isPersonalInfoPanelActive() || isAccountEditMode) {
+        fillAccountForm(activeTechnicianProfile);
+        setAccountFormEnabled(!!(activeTechnicianProfile && activeTechnicianProfile.uid));
+      }
       maybeShowTechnicianOnboarding(activeTechnicianProfile);
-      renderProfileCompletionPrompt(getTechnicianSkills(activeTechnicianProfile, activeTechnicianProfile && activeTechnicianProfile.email));
-      renderMessagesPanel(activeTechnicianProfile || {}, []);
-      renderSampleOverview(activeTechnicianProfile);
+      const fallbackSkills = getTechnicianSkills(activeTechnicianProfile, activeTechnicianProfile && activeTechnicianProfile.email);
+      renderSkillChips(fallbackSkills);
+      renderProfileCompletionPrompt(fallbackSkills);
+      if (getActiveSectionId() === 'messages-page') {
+        renderMessagesPanel(activeTechnicianProfile || {}, []);
+      }
+      setText('techStatTotal', '0');
+      setText('techStatAssigned', '0');
+      setText('techStatInProgress', '0');
+      setText('techStatCompleted', '0');
+      setText('techStatRating', '--');
+      if (getActiveSectionId() === 'request-list') {
+        renderAssignedRequests([]);
+      }
+      if (getActiveSectionId() === 'accepted-request') {
+        renderSimpleRequestRows('techActiveJobsList', [], 'No open jobs.');
+      }
+      if (getActiveSectionId() === 'history-request') {
+        renderSimpleRequestRows('techHistoryJobsList', [], 'No history jobs yet.');
+      }
+      if (getActiveSectionId() === 'schedule-page') {
+        renderSchedule([]);
+      }
     }
   }
 
@@ -3602,6 +4100,28 @@ document.addEventListener('DOMContentLoaded', () => {
     panels.forEach((panel) => {
       panel.hidden = panel.dataset.panel !== sectionId;
     });
+
+    if (sectionId === 'personal-information') {
+      ensureLocationControllersInitialized({ includeAccount: true, includeModal: false });
+      fillAccountForm(activeTechnicianProfile || {});
+      setAccountFormEnabled(!!(activeTechnicianProfile && activeTechnicianProfile.uid));
+    }
+
+    if (sectionId === 'accepted-request') {
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    }
+
+    if (sectionId === 'history-request') {
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    }
+
+    if (sectionId === 'schedule-page') {
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    }
+
+    if (sectionId === 'messages-page') {
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    }
   }
 
   navLinks.forEach((link) => {
@@ -3610,28 +4130,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  function initLocationControllers() {
-    accountLocationController = createLocationController({
-      provinceId: 'techProvince',
-      cityId: 'techCity',
-      townId: 'techTown'
-    });
+  function ensureLocationControllersInitialized(options = {}) {
+    const includeAccount = options.includeAccount !== false;
+    const includeModal = options.includeModal !== false;
 
-    modalLocationController = createLocationController({
-      provinceId: 'techOnboardProvince',
-      cityId: 'techOnboardCity',
-      townId: 'techOnboardTown'
-    });
+    if (!locationControllersInitialized) {
+      accountLocationController = createLocationController({
+        provinceId: 'techProvince',
+        cityId: 'techCity',
+        townId: 'techTown'
+      });
 
-    if (accountLocationController) accountLocationController.init();
-    if (modalLocationController) modalLocationController.init();
+      modalLocationController = createLocationController({
+        provinceId: 'techOnboardProvince',
+        cityId: 'techOnboardCity',
+        townId: 'techOnboardTown'
+      });
+
+      locationControllersInitialized = true;
+    }
+
+    if (includeAccount && accountLocationController && !accountLocationController.__initialized) {
+      accountLocationController.init();
+      accountLocationController.__initialized = true;
+    }
+
+    if (includeModal && modalLocationController && !modalLocationController.__initialized) {
+      modalLocationController.init();
+      modalLocationController.__initialized = true;
+    }
   }
 
   ns.bindSidebarToggle();
   ns.bindUserMenu();
   ns.bindAuthState();
   ns.bindSignOut();
-  initLocationControllers();
   bindScheduleControls();
   bindAccountSection();
   bindPasswordSection();

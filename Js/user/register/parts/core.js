@@ -632,6 +632,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (rawCode.includes('permission-denied') && scope === 'send') {
       return 'Unable to send verification link right now. Please try again.';
     }
+    if (rawCode.includes('too-many-requests')) {
+      if (scope === 'send') {
+        return 'Too many attempts on this device. Please wait a few minutes and try again.';
+      }
+      return 'Too many attempts. Please wait a few minutes and try again.';
+    }
     if (rawCode.includes('invalid-action-code') && scope === 'verification') {
       return 'Invalid or expired email verification code.';
     }
@@ -732,14 +738,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     prepareAccountDebounceTimer = setTimeout(() => {
       prepareAccountDebounceTimer = null;
+      if (currentStep < 2) return;
+      const emailErr = reg.validateEmailField(fields.email);
+      if (emailErr) return;
+      if (prepareAccountEmail === value && prepareAccountPromise) return;
+      warmupPreparedAccountForEmail(value).catch(() => {});
     }, 280);
   });
 
   fields.first.addEventListener('blur', () => {
-    if (!(fields.first.value || '').trim()) { reg.clearError(fields.first); return; }
     const err = reg.validateFirstNameField(fields.first);
-    if (!err) fields.first.value = reg.titleCaseName(fields.first.value);
-    else reg.setError(fields.first, err);
+    if (!err) {
+      fields.first.value = reg.titleCaseName(fields.first.value);
+      reg.clearError(fields.first);
+    } else {
+      reg.setError(fields.first, err);
+    }
   });
 
   fields.middle.addEventListener('blur', () => {
@@ -765,10 +779,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   fields.last.addEventListener('blur', () => {
-    if (!(fields.last.value || '').trim()) { reg.clearError(fields.last); return; }
     const err = reg.validateLastNameField(fields.last);
-    if (!err) fields.last.value = reg.titleCaseName(fields.last.value);
-    else reg.setError(fields.last, err);
+    if (!err) {
+      fields.last.value = reg.titleCaseName(fields.last.value);
+      reg.clearError(fields.last);
+    } else {
+      reg.setError(fields.last, err);
+    }
   });
 
   function syncSuffixFromRadio() {
@@ -833,10 +850,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   fields.birthdate.addEventListener('blur', () => {
-    if (!String(fields.birthdate.value || '').trim()) {
-      reg.clearError(fields.birthdate);
-      return;
-    }
     const normalizedBirthdate = reg.normalizeBirthdateValue(fields.birthdate.value);
     if (normalizedBirthdate && fields.birthdate.value !== normalizedBirthdate) {
       fields.birthdate.value = normalizedBirthdate;
@@ -909,6 +922,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const stepTitle = document.getElementById('stepTitle');
+  const stepChips = Array.from(document.querySelectorAll('[data-step-chip]'));
   const stepPanels = Array.from(document.querySelectorAll('.form-step'));
   const nextToStep2Btn = document.getElementById('nextToStep2Btn');
   const createAccountBtn = document.getElementById('createAccountBtn');
@@ -1176,7 +1190,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function updateStepTitle(step) {
     if (!stepTitle) return;
-    stepTitle.textContent = `Part ${step} of 3`;
+    stepTitle.textContent = `Step ${step} of 3`;
+  }
+
+  function updateStepIndicator(step) {
+    stepChips.forEach((chip) => {
+      const chipStep = Number(chip.dataset.stepChip) || 0;
+      chip.classList.toggle('is-active', chipStep === step);
+      chip.classList.toggle('is-complete', chipStep > 0 && chipStep < step);
+    });
   }
 
   function showStep(step) {
@@ -1186,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       panel.hidden = Number(panel.dataset.step) !== nextStep;
     });
     updateStepTitle(nextStep);
+    updateStepIndicator(nextStep);
   }
 
   function validateSequence(sequence) {

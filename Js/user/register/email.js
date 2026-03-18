@@ -4,7 +4,7 @@
   ns.validateEmailField = function validateEmailField(el) {
     const v = String((el && el.value) || '').trim();
     if (!v) return 'Email is required.';
-    if (!ns.emailRegex.test(v)) return 'Please enter a valid email. Example: yourname@gmail.com or yourname@yahoo.com.';
+    if (!ns.emailRegex.test(v)) return 'Enter a valid email (e.g., yourname@gmail.com or yourname@school.edu).';
     return null;
   };
 })();

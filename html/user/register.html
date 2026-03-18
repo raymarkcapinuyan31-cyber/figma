@@ -4,19 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Register - HomeFixSolution</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../css/user/pages/register/index.css">
 </head>
 <body>
   <div class="register-page">
-    <header class="site-header">
-      <div class="logo-wrapper">
-        <img class="site-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
-      </div>
-      <div class="brand">Create an Account</div>
-    </header>
-
     <main class="panel-wrapper">
       <div class="panel">
+        <div class="panel-header">
+          <div class="panel-topbar">
+            <div class="panel-branding">
+              <div class="logo-wrapper">
+                <img class="site-logo" src="../../images/logos/homefixlogo.png" alt="HomeFixSolution logo">
+              </div>
+              <div>
+                <h2 class="panel-title">Create account</h2>
+              </div>
+            </div>
+          </div>
+          <div class="step-title" id="stepTitle">Step 1 of 3</div>
+        </div>
         <form class="register-form" novalidate>
           <section class="form-step" data-step="1">
             <div class="form-row">
@@ -81,7 +90,7 @@
             </div>
 
             <div class="actions">
-              <button type="button" class="btn back" id="backBtnStep1">BACK</button>
+              <button type="button" class="btn back" id="backBtnStep1">BACK TO LOG IN</button>
               <button type="button" class="btn create" id="nextToStep2Btn">NEXT</button>
             </div>
           </section>
@@ -168,8 +177,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"></script>
   <script src="../../firebase/config/firebase-config.js?v=20260305a"></script>
-  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
-  <script src="../../databasehfs/users/user-profile-database.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260312a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js?v=20260312a"></script>
   <script src="../../databasehfs/users/booking-database.js"></script>
   <script src="../../databasehfs/users/user-database.js"></script>
   <script src="../../Js/user/register/shared.js"></script>
@@ -184,7 +193,7 @@
   <script src="../../Js/user/register/otp.js"></script>
   <script src="../../Js/user/register/password.js"></script>
   <script src="../../Js/user/register/confirm-password.js"></script>
-  <script src="../../Js/user/register/parts/core.js?v=20260308a"></script>
+  <script src="../../Js/user/register/parts/core.js?v=20260312a"></script>
   <script src="../../Js/user/register/main.js"></script>
 </body>
 </html>

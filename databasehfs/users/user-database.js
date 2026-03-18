@@ -91,6 +91,25 @@
     }
   }
 
+  function toLogTimestamp(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^\d{10,}$/.test(trimmed)) {
+        const numeric = Number(trimmed);
+        if (Number.isFinite(numeric)) return numeric;
+      }
+      const parsed = Date.parse(trimmed);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  }
+
+  function getLogTimestamp(item) {
+    if (!item || typeof item !== 'object') return 0;
+    return toLogTimestamp(item.createdAt || item.timestamp || item.time || item.created_at);
+  }
+
   async function logSessionEvent(payload) {
     const rtdb = getRealtimeDatabase();
     if (!rtdb) return '';
@@ -107,7 +126,13 @@
       action,
       uid,
       sessionId,
-      createdAt: timestamp
+      createdAt: timestamp,
+      timestamp,
+      date: new Date(timestamp).toLocaleDateString('en-US'),
+      time: new Date(timestamp).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+      })
     };
 
     try {
@@ -192,7 +217,7 @@
       const items = Object.keys(value).map((id) => {
         const data = value[id] && typeof value[id] === 'object' ? value[id] : {};
         return Object.assign({ id }, data);
-      }).sort((left, right) => Number(right && right.createdAt || 0) - Number(left && left.createdAt || 0));
+      }).sort((left, right) => getLogTimestamp(right) - getLogTimestamp(left));
 
       if (typeof onData === 'function') {
         onData(items);
@@ -226,7 +251,7 @@
       const items = Object.keys(value).map((id) => {
         const data = value[id] && typeof value[id] === 'object' ? value[id] : {};
         return Object.assign({ id }, data);
-      }).sort((left, right) => Number(right && right.createdAt || 0) - Number(left && left.createdAt || 0));
+      }).sort((left, right) => getLogTimestamp(right) - getLogTimestamp(left));
       safeOnData(items);
     };
 
@@ -248,7 +273,7 @@
 
     function emitMerged() {
       const merged = loginItems.concat(logoutItems)
-        .sort((left, right) => Number(right && right.createdAt || 0) - Number(left && left.createdAt || 0));
+        .sort((left, right) => getLogTimestamp(right) - getLogTimestamp(left));
       safeOnData(merged);
     }
 
@@ -298,6 +323,7 @@
     subscribeAllRequests: booking.subscribeAllRequests.bind(booking),
     updateBookingRequestStatus: booking.updateBookingRequestStatus.bind(booking),
     cancelBookingRequest: booking.cancelBookingRequest.bind(booking),
+    syncScheduleLockForRequest: booking.syncScheduleLockForRequest.bind(booking),
 
     logSessionEvent,
     subscribeSessionLogs,

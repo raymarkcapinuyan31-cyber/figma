@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Service Requests €” HomeFixSolution</title>
+  <title>Service History - HomeFixSolution</title>
   <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
   <link rel="stylesheet" href="../../css/user/pages/pending/index.css?v=20260309a">
   <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
-<body>
+<body class="dashboard-home-page request-history-page">
   <div class="app-shell">
     <header class="topbar">
       <div class="topbar-left">
@@ -49,15 +49,17 @@
       <main class="content">
         <section class="home-card request-card">
           <header class="request-hero">
-            <p class="request-kicker">Service Requests</p>
-            <h1>Track Your Bookings</h1>
+            <h1>Service History</h1>
           </header>
 
           <div class="request-panel">
-            <div class="request-tabs">
-              <button class="tab-btn active" type="button" data-tab="pending">Pending</button>
-              <button class="tab-btn" type="button" data-tab="confirmed">Confirmed</button>
-              <button class="tab-btn" type="button" data-tab="history">History</button>
+            <div class="request-toolbar">
+              <div class="request-tabs">
+                <button class="tab-btn active" type="button" data-tab="pending">Pending</button>
+                <button class="tab-btn" type="button" data-tab="confirmed">Confirmed</button>
+                <button class="tab-btn" type="button" data-tab="history">History</button>
+              </div>
+              <a class="request-new-btn" href="book.html">New Request</a>
             </div>
             <div class="request-filter-wrap" id="typeFilterWrap">
               <label class="request-filter-label" for="typeFilter" id="typeFilterLabel">Filter:</label>
@@ -76,7 +78,7 @@
     <div class="cancel-request-modal" id="cancelRequestModal" hidden aria-hidden="true">
       <div class="cancel-request-modal-card" role="dialog" aria-modal="true" aria-labelledby="cancelRequestTitle">
         <h2 id="cancelRequestTitle">Cancel request?</h2>
-        <p>You can't submit this request again.</p>
+        <p>Once cancelled, this request will no longer continue.</p>
         <div class="cancel-request-modal-actions">
           <button type="button" class="modal-btn modal-btn-secondary" id="cancelRequestCancelBtn">No</button>
           <button type="button" class="modal-btn" id="cancelRequestYesBtn">Yes</button>
@@ -99,9 +101,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   <script src="../../firebase/config/firebase-config.js"></script>
-  <script src="../../databasehfs/users/core.js?v=20260304a"></script>
-  <script src="../../databasehfs/users/user-profile-database.js"></script>
-  <script src="../../databasehfs/users/booking-database.js"></script>
+  <script src="../../databasehfs/users/core.js?v=20260312a"></script>
+  <script src="../../databasehfs/users/user-profile-database.js?v=20260312a"></script>
+  <script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
   <script src="../../databasehfs/users/user-database.js"></script>
   <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
   <script src="../../Js/user/side-panel/auth.js?v=20260309c"></script>
@@ -115,7 +117,7 @@
   <script src="../../Js/user/side-panel/buttons/logout.js"></script>
   <script src="../../Js/user/dashboard/parts/core.js?v=20260309e"></script>
   <script src="../../Js/user/dashboard/main.js"></script>
-  <script src="../../Js/user/pending/parts/core.js?v=20260309e"></script>
+  <script src="../../Js/user/pending/parts/core.js?v=20260315b"></script>
   <script src="../../Js/user/pending/index.js"></script>
 </body>
 </html>
