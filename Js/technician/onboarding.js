@@ -3,6 +3,8 @@
   const DEMO_SESSION_KEY = 'hfs_technician_demo_session';
   const DEMO_PROFILE_KEY = 'hfs_technician_demo_profile_v1';
   const FORCED_TECHNICIAN_EMAILS = new Set(['kingsnever721@gmail.com']);
+  const LOGIN_NOTICE_KEY = 'hfs_login_notice';
+  const DISABLED_ACCOUNT_MESSAGE = 'Your account has been disabled. Please contact the administrator for assistance.';
   const SKILL_OPTIONS = ['HVAC Technician', 'Appliance Repair Technician', 'Electrician', 'Plumber'];
   const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';
   const NORTH_LUZON_PROVINCES = [
@@ -33,9 +35,94 @@
   const provinceCityCache = new Map();
   const cityTownCache = new Map();
   let onboardingLocationController = null;
+  let stopDisabledStateWatcher = null;
 
   function normalizeSpaces(value) {
     return String(value || '').trim().replace(/\s+/g, ' ');
+  }
+
+  function getRealtimeDb() {
+    if (usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function') {
+      return usersDb.firebase.database();
+    }
+    if (window.firebase && typeof window.firebase.database === 'function') {
+      return window.firebase.database();
+    }
+    return null;
+  }
+
+  function rememberDisabledAccountNotice() {
+    try {
+      sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify({
+        type: 'error',
+        message: DISABLED_ACCOUNT_MESSAGE,
+        createdAt: Date.now()
+      }));
+    } catch (_) {
+    }
+  }
+
+  function clearDisabledStateWatcher() {
+    if (typeof stopDisabledStateWatcher === 'function') {
+      try {
+        stopDisabledStateWatcher();
+      } catch (_) {
+      }
+    }
+    stopDisabledStateWatcher = null;
+  }
+
+  async function forceDisabledAccountLogout() {
+    rememberDisabledAccountNotice();
+    if (usersDb && typeof usersDb.signOut === 'function') {
+      try { await usersDb.signOut(); } catch (_) {}
+    }
+    window.location.href = '../../login.html';
+  }
+
+  function bindDisabledStateWatcher(uid) {
+    clearDisabledStateWatcher();
+
+    const cleanUid = String(uid || '').trim();
+    const rtdb = getRealtimeDb();
+    if (!cleanUid || !rtdb) return;
+
+    const refs = [
+      rtdb.ref(`technicians/${cleanUid}`),
+      rtdb.ref(`users/${cleanUid}`),
+      rtdb.ref(`customers/${cleanUid}`)
+    ];
+    const listeners = [];
+    const state = { technicians: null, users: null, customers: null };
+    let handlingDisabled = false;
+
+    const evaluate = async () => {
+      if (handlingDisabled) return;
+      const records = [state.technicians, state.users, state.customers].filter(Boolean);
+      if (!records.some((record) => record && record.isActive === false)) return;
+      handlingDisabled = true;
+      await forceDisabledAccountLogout();
+    };
+
+    ['technicians', 'users', 'customers'].forEach((key, index) => {
+      const ref = refs[index];
+      const listener = (snapshot) => {
+        state[key] = snapshot && typeof snapshot.exists === 'function' && snapshot.exists()
+          ? (snapshot.val() || {})
+          : null;
+        void evaluate();
+      };
+      listeners.push(listener);
+      ref.on('value', listener);
+    });
+
+    stopDisabledStateWatcher = function stopWatcher() {
+      refs.forEach((ref, index) => {
+        const listener = listeners[index];
+        if (!ref || typeof ref.off !== 'function' || typeof listener !== 'function') return;
+        ref.off('value', listener);
+      });
+    };
   }
 
   function normalizeText(value) {
@@ -516,6 +603,12 @@
 
       const role = String(profile && profile.role ? profile.role : '').toLowerCase();
       const normalizedEmail = String((profile && profile.email) || user.email || '').trim().toLowerCase();
+      const isActive = !(profile && profile.isActive === false);
+
+      if (!isActive) {
+        await forceDisabledAccountLogout();
+        return null;
+      }
 
       if (normalizedEmail && FORCED_TECHNICIAN_EMAILS.has(normalizedEmail) && role !== 'technician') {
         try {
@@ -584,6 +677,10 @@
   document.addEventListener('DOMContentLoaded', async () => {
     const ctx = await loadContext();
     if (!ctx) return;
+
+    if (ctx.mode === 'firebase' && ctx.profile && ctx.profile.uid) {
+      bindDisabledStateWatcher(ctx.profile.uid);
+    }
 
     if (isProfileComplete(ctx.profile)) {
       redirectDashboard();

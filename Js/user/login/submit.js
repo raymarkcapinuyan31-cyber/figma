@@ -8,6 +8,7 @@
   const ADMIN_DEMO_SESSION_KEY = 'hfs_admin_demo_session';
   const ADMIN_DEMO_AUTH_KEY = 'hfs_admin_demo_firebase_auth_v1';
   const PROFILE_CACHE_KEY = 'hfs_profile_cache_v1';
+  const DISABLED_ACCOUNT_MESSAGE = 'Your account has been disabled. Please contact the administrator for assistance.';
   const FORCED_TECHNICIAN_EMAILS = new Set(['kingsnever721@gmail.com']);
 
   function normalizeLower(value) {
@@ -512,6 +513,20 @@
     const authEmail = normalizedIdentifier;
 
     if (authEmail === TECHNICIAN_DEMO_EMAIL && password === TECHNICIAN_DEMO_PASSWORD) {
+      let demoProfile = null;
+      try {
+        if (window.usersDatabase && typeof window.usersDatabase.getUserByEmail === 'function') {
+          demoProfile = await window.usersDatabase.getUserByEmail(TECHNICIAN_DEMO_EMAIL);
+        }
+      } catch (_) {
+      }
+
+      if (demoProfile && demoProfile.isActive === false) {
+        ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
+        if (passwordInput) passwordInput.focus();
+        return;
+      }
+
       try {
         sessionStorage.setItem(TECHNICIAN_DEMO_SESSION_KEY, JSON.stringify({
           email: TECHNICIAN_DEMO_EMAIL,
@@ -597,7 +612,7 @@
           await window.usersDatabase.signOut();
         } catch (_) {
         }
-        ns.setError(passwordInput, 'This account is disabled. Please contact admin.');
+        ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
         if (passwordInput) passwordInput.focus();
         return;
       }
@@ -675,6 +690,15 @@
             try {
               const bootstrapped = await tryBootstrapExistingTechnician(authEmail, password);
               if (bootstrapped && bootstrapped.authUser) {
+                if (bootstrapped.profile && bootstrapped.profile.isActive === false) {
+                  try {
+                    await window.usersDatabase.signOut();
+                  } catch (_) {
+                  }
+                  ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
+                  if (passwordInput) passwordInput.focus();
+                  return;
+                }
                 saveProfileCache(bootstrapped.profile, bootstrapped.authUser);
                 startRoleSession({
                   role: 'technician',

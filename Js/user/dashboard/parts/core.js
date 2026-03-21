@@ -240,7 +240,6 @@ document.addEventListener('DOMContentLoaded', () => {
           uid: user.uid,
           email: String(user.email || '').trim().toLowerCase(),
           role: 'customer',
-          isActive: true,
           isVerified: !!user.emailVerified,
           emailVerified: !!user.emailVerified
         });

@@ -5,11 +5,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const passwordInput = document.getElementById('password');
   const loginBtn = document.getElementById('loginBtn') || document.querySelector('.btn');
 
+  if (typeof ns.consumeLoginNotice === 'function' && typeof ns.showNotice === 'function') {
+    const notice = ns.consumeLoginNotice();
+    if (notice && notice.message) {
+      ns.showNotice(notice.message, notice.type || 'error');
+    }
+  }
+
   if (emailInput && typeof ns.clearError === 'function') {
-    emailInput.addEventListener('input', () => ns.clearError(emailInput));
+    emailInput.addEventListener('input', () => {
+      ns.clearError(emailInput);
+      if (typeof ns.clearNotice === 'function') ns.clearNotice();
+    });
   }
   if (passwordInput && typeof ns.clearError === 'function') {
-    passwordInput.addEventListener('input', () => ns.clearError(passwordInput));
+    passwordInput.addEventListener('input', () => {
+      ns.clearError(passwordInput);
+      if (typeof ns.clearNotice === 'function') ns.clearNotice();
+    });
   }
 
   if (typeof ns.bindPasswordToggles === 'function') {

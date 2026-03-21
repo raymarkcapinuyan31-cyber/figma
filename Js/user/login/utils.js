@@ -1,5 +1,7 @@
 (function () {
   const ns = (window.hfsLogin = window.hfsLogin || {});
+  const LOGIN_NOTICE_KEY = 'hfs_login_notice';
+  const DEFAULT_DISABLED_MESSAGE = 'Your account has been disabled. Please contact the administrator for assistance.';
 
   ns.setError = function setError(el, msg) {
     if (!el) return;
@@ -20,6 +22,39 @@
     if (err) {
       err.textContent = '';
       err.style.display = 'none';
+    }
+  };
+
+  ns.showNotice = function showNotice(msg, type) {
+    const notice = document.getElementById('loginNotice');
+    if (!notice) return;
+    notice.textContent = msg || '';
+    notice.hidden = !msg;
+    notice.classList.remove('error', 'success');
+    if (type) notice.classList.add(type);
+  };
+
+  ns.clearNotice = function clearNotice() {
+    const notice = document.getElementById('loginNotice');
+    if (!notice) return;
+    notice.textContent = '';
+    notice.hidden = true;
+    notice.classList.remove('error', 'success');
+  };
+
+  ns.consumeLoginNotice = function consumeLoginNotice() {
+    try {
+      const raw = sessionStorage.getItem(LOGIN_NOTICE_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(LOGIN_NOTICE_KEY);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return {
+        type: String(parsed.type || 'error').trim() || 'error',
+        message: String(parsed.message || DEFAULT_DISABLED_MESSAGE).trim() || DEFAULT_DISABLED_MESSAGE
+      };
+    } catch (_) {
+      return { type: 'error', message: DEFAULT_DISABLED_MESSAGE };
     }
   };
 

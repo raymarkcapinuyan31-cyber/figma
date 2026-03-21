@@ -31,15 +31,22 @@
 	const provinceCityCache = new Map();
 	const ACCEPTED_STATUSES = new Set(['accepted', 'confirmed', 'in-progress', 'ongoing', 'completed', 'finished']);
 	const CANCELLED_STATUSES = new Set(['cancelled', 'canceled', 'declined', 'rejected']);
+	const TABLE_PAGE_SIZE = 10;
+	const ACCOUNTS_PAGE_SIZE = TABLE_PAGE_SIZE;
+	const REQUESTS_PAGE_SIZE = TABLE_PAGE_SIZE;
+	const REPORTS_PAGE_SIZE = TABLE_PAGE_SIZE;
 	const SESSION_LOGS_PAGE_SIZE = 10;
 	const state = {
 		accounts: [],
+		accountsPage: 1,
 		sessionPresenceByUid: {},
 		latestCustomerLoginLogIdByUid: {},
 		requests: [],
 		allRequests: [],
 		visibleRequests: [],
+		requestsPage: 1,
 		reports: [],
+		reportsPage: 1,
 		sessionLogs: [],
 		sessionLogsPage: 1,
 		sessionRoleFilter: 'customer',
@@ -56,6 +63,7 @@
 	let unsubscribeReports = null;
 	let unsubscribeSessionPresence = [];
 	let requestActionFallbackBound = false;
+	let pendingAccountActionResolver = null;
 
 	function readAdminSession() {
 		try {
@@ -126,17 +134,42 @@
 		}
 
 		const demoEmail = `admin.demo.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}@homefixsolution.app`;
-		const demoPassword = `Admin#${Date.now().toString(36)}Aa1!${Math.random().toString(36).slice(2, 4)}`;
+		const passwordCandidates = buildAdminDemoPasswordCandidates();
 
 		try {
-			const credential = await usersDb.auth.createUserWithEmailAndPassword(demoEmail, demoPassword);
-			const authUser = credential && credential.user ? credential.user : null;
-			if (!authUser || !authUser.uid) return false;
+			let authUser = null;
+			let chosenPassword = '';
+			let lastError = null;
+
+			for (let index = 0; index < passwordCandidates.length; index += 1) {
+				const candidate = normalizeText(passwordCandidates[index]);
+				if (!candidate) continue;
+				try {
+					const credential = await usersDb.auth.createUserWithEmailAndPassword(demoEmail, candidate);
+					authUser = credential && credential.user ? credential.user : null;
+					chosenPassword = candidate;
+					break;
+				} catch (error) {
+					lastError = error;
+					const code = normalizeLower(error && error.code);
+					const message = normalizeLower(error && error.message);
+					const isPasswordPolicyError = code.includes('weak-password')
+						|| code.includes('password-does-not-meet-requirements')
+						|| message.includes('password')
+						|| message.includes('requirements');
+					if (!isPasswordPolicyError) throw error;
+				}
+			}
+
+			if (!authUser || !authUser.uid || !chosenPassword) {
+				if (lastError) throw lastError;
+				return false;
+			}
 
 			try {
 				localStorage.setItem(ADMIN_DEMO_AUTH_KEY, JSON.stringify({
 					email: demoEmail,
-					password: demoPassword
+					password: chosenPassword
 				}));
 			} catch (_) {
 			}
@@ -189,6 +222,16 @@
 
 	function normalizeLower(value) {
 		return normalizeText(value).toLowerCase();
+	}
+
+	function buildAdminDemoPasswordCandidates() {
+		const stamp = Date.now().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '');
+		const base = (stamp + 'X7').slice(-4);
+		return [
+			`Ad#${base}a1`,
+			`HF#${base}a2`,
+			`Ax#${base}B3`
+		].filter((value) => value.length >= 8 && value.length <= 12);
 	}
 
 	function toApprovedSkillCategory(value) {
@@ -297,6 +340,122 @@
 
 	function isAccountEnabled(account) {
 		return !(account && account.isActive === false);
+	}
+
+	function getAccountStatusText(account) {
+		return isAccountEnabled(account) ? 'Enabled' : 'Disabled';
+	}
+
+	function getAccountById(userId) {
+		const targetId = normalizeText(userId);
+		if (!targetId) return null;
+		const list = Array.isArray(state.accounts) ? state.accounts : [];
+		for (let index = 0; index < list.length; index += 1) {
+			const account = list[index];
+			if (getAccountUid(account) === targetId) return account;
+		}
+		return null;
+	}
+
+	async function ensureAdminRealtimeAccess(authUser) {
+		const user = authUser || (usersDb && usersDb.auth ? usersDb.auth.currentUser : null);
+		const uid = normalizeText(user && user.uid);
+		if (!uid) return false;
+
+		const rtdb = getRealtimeDatabase();
+		if (!rtdb) return false;
+
+		try {
+			await rtdb.ref(`users/${uid}`).update({
+				uid,
+				email: normalizeLower(user && user.email),
+				role: 'admin',
+				isActive: true,
+				isVerified: true,
+				emailVerified: true,
+				updatedAt: Date.now()
+			});
+			return true;
+		} catch (_) {
+			return false;
+		}
+	}
+
+	async function updateAccountActiveStateInRealtime(userId, shouldEnable, role, email) {
+		const cleanUserId = normalizeText(userId);
+		if (!cleanUserId) return false;
+
+		const rtdb = getRealtimeDatabase();
+		if (!rtdb) return false;
+
+		const payload = {
+			isActive: !!shouldEnable,
+			updatedAt: Date.now()
+		};
+
+		const refs = {
+			customers: rtdb.ref(`customers/${cleanUserId}`),
+			technicians: rtdb.ref(`technicians/${cleanUserId}`),
+			users: rtdb.ref(`users/${cleanUserId}`)
+		};
+		const seenRefs = new Set();
+		const updates = [];
+		const pushUpdate = (ref, extraPayload) => {
+			if (!ref || typeof ref.update !== 'function') return;
+			const key = normalizeText(ref.toString ? ref.toString() : '');
+			if (key && seenRefs.has(key)) return;
+			if (key) seenRefs.add(key);
+			updates.push(ref.update(Object.assign({}, payload, extraPayload || {})));
+		};
+
+		const snapshots = await Promise.all([
+			refs.customers.once('value').catch(() => null),
+			refs.technicians.once('value').catch(() => null),
+			refs.users.once('value').catch(() => null)
+		]);
+
+		if (snapshots[0] && snapshots[0].exists()) pushUpdate(refs.customers);
+		if (snapshots[1] && snapshots[1].exists()) pushUpdate(refs.technicians);
+		if (snapshots[2] && snapshots[2].exists()) pushUpdate(refs.users);
+
+		const cleanEmail = normalizeLower(email);
+		if (cleanEmail) {
+			const fieldCandidates = ['email', 'emailAddress', 'email_address'];
+			const rootConfigs = [
+				{ path: 'customers', rootRef: rtdb.ref('customers') },
+				{ path: 'technicians', rootRef: rtdb.ref('technicians') },
+				{ path: 'users', rootRef: rtdb.ref('users') }
+			];
+
+			for (let fieldIndex = 0; fieldIndex < fieldCandidates.length; fieldIndex += 1) {
+				const field = fieldCandidates[fieldIndex];
+				for (let rootIndex = 0; rootIndex < rootConfigs.length; rootIndex += 1) {
+					const config = rootConfigs[rootIndex];
+					let snapshot = null;
+					try {
+						snapshot = await config.rootRef.orderByChild(field).equalTo(cleanEmail).once('value');
+					} catch (_) {
+						snapshot = null;
+					}
+					const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+					Object.keys(value).forEach((matchedUid) => {
+						const ref = rtdb.ref(`${config.path}/${matchedUid}`);
+						pushUpdate(ref);
+					});
+				}
+			}
+		}
+
+		if (!updates.length) {
+			const normalizedRole = normalizeLower(role);
+			const targetRef = normalizedRole === 'technician'
+				? refs.technicians
+				: (normalizedRole === 'admin' ? refs.users : refs.customers);
+			pushUpdate(targetRef, normalizedRole ? { role: normalizedRole } : {});
+		}
+
+		await Promise.all(updates);
+		return true;
 	}
 
 	function stopSessionPresenceTracking() {
@@ -1148,6 +1307,273 @@
 		return count;
 	}
 
+	function getPaginatedItems(items, currentPage, pageSize) {
+		const list = Array.isArray(items) ? items : [];
+		const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+		const activePage = Math.min(Math.max(1, Number(currentPage) || 1), pageCount);
+		const startIndex = (activePage - 1) * pageSize;
+		return {
+			pageCount,
+			activePage,
+			items: list.slice(startIndex, startIndex + pageSize)
+		};
+	}
+
+	function setTablePagination(pageIndicatorId, prevBtnId, nextBtnId, activePage, pageCount) {
+		const pageIndicator = document.getElementById(pageIndicatorId);
+		const prevBtn = document.getElementById(prevBtnId);
+		const nextBtn = document.getElementById(nextBtnId);
+		if (pageIndicator) pageIndicator.textContent = `Page ${activePage} of ${pageCount}`;
+		if (prevBtn) prevBtn.disabled = activePage <= 1;
+		if (nextBtn) nextBtn.disabled = activePage >= pageCount;
+	}
+
+	function toSerializable(value) {
+		try {
+			const serialized = JSON.stringify(value == null ? null : value);
+			return serialized ? JSON.parse(serialized) : null;
+		} catch (_) {
+			return value == null ? null : value;
+		}
+	}
+
+	function getBackupSummaryCounts() {
+		const accounts = Array.isArray(state.accounts) ? state.accounts : [];
+		const requests = Array.isArray(state.allRequests) ? state.allRequests : [];
+		const reports = Array.isArray(state.reports) ? state.reports : [];
+		const sessionLogs = Array.isArray(state.sessionLogs) ? state.sessionLogs : [];
+		return {
+			accounts: accounts.length,
+			requests: requests.length,
+			reports: reports.length,
+			sessionLogs: sessionLogs.length
+		};
+	}
+
+	function renderBackupSummary() {
+		const counts = getBackupSummaryCounts();
+		setText('backupAccountsCount', String(counts.accounts));
+		setText('backupRequestsCount', String(counts.requests));
+		setText('backupReportsCount', String(counts.reports));
+		setText('backupSessionLogsCount', String(counts.sessionLogs));
+	}
+
+	function setBackupStatus(message, tone) {
+		const element = document.getElementById('backupStatusMessage');
+		if (!element) return;
+		element.textContent = normalizeText(message) || 'Ready to create a backup file.';
+		element.classList.toggle('success', tone === 'success');
+		element.classList.toggle('error', tone === 'error');
+	}
+
+	function buildBackupFileStamp() {
+		return new Date().toISOString().replace(/[:.]/g, '-');
+	}
+
+	function buildBackupFileName(kind) {
+		const label = normalizeLower(kind || 'backup').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'backup';
+		return `homefixsolution-admin-${label}-${buildBackupFileStamp()}.json`;
+	}
+
+	function downloadJsonFile(fileName, payload) {
+		const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = fileName;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		setTimeout(() => {
+			URL.revokeObjectURL(url);
+		}, 0);
+	}
+
+	async function prepareAdminBackupAccess() {
+		const session = readAdminSession();
+		try {
+			await ensureDemoAdminFirebaseAuth(session);
+		} catch (_) {
+		}
+		await waitForCurrentAuthUser(2500);
+	}
+
+	async function readRealtimePathValue(path) {
+		const targetPath = normalizeText(path);
+		const rtdb = getRealtimeDatabase();
+		if (!rtdb || !targetPath) return null;
+		try {
+			const snapshot = await rtdb.ref(targetPath).once('value');
+			return snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+		} catch (error) {
+			return {
+				__backupError: normalizeText(error && (error.code || error.message)) || 'read-failed',
+				path: targetPath
+			};
+		}
+	}
+
+	async function getSessionLogsRealtimeBackup() {
+		const [loginCustomers, logoutCustomers, loginTechnicians, logoutTechnicians] = await Promise.all([
+			readRealtimePathValue('sessionLogs/login/customers'),
+			readRealtimePathValue('sessionLogs/logout/customers'),
+			readRealtimePathValue('sessionLogs/login/technicians'),
+			readRealtimePathValue('sessionLogs/logout/technicians')
+		]);
+
+		return {
+			login: {
+				customers: loginCustomers,
+				technicians: loginTechnicians
+			},
+			logout: {
+				customers: logoutCustomers,
+				technicians: logoutTechnicians
+			}
+		};
+	}
+
+	async function getReportsRealtimeBackup() {
+		const [technician, technicians, legacy] = await Promise.all([
+			readRealtimePathValue('reports/technician'),
+			readRealtimePathValue('reports/technicians'),
+			readRealtimePathValue('technicianReports')
+		]);
+
+		return {
+			technician,
+			technicians,
+			legacyTechnicianReports: legacy
+		};
+	}
+
+	async function buildBackupPayload(kind) {
+		const backupKind = normalizeLower(kind || 'full') || 'full';
+		const generatedAt = new Date().toISOString();
+		const summary = getBackupSummaryCounts();
+		const accounts = toSerializable(Array.isArray(state.accounts) ? state.accounts : []);
+		const requests = toSerializable(Array.isArray(state.allRequests) ? state.allRequests : []);
+		const reports = toSerializable(Array.isArray(state.reports) ? state.reports : []);
+		const sessionLogs = toSerializable(Array.isArray(state.sessionLogs) ? state.sessionLogs : []);
+		const metadata = {
+			generatedAt,
+			type: backupKind,
+			source: 'admin-dashboard',
+			firebaseMode: normalizeText(usersDb && usersDb.mode) || 'unknown'
+		};
+
+		if (backupKind === 'accounts') {
+			return {
+				metadata,
+				summary: {
+					total: summary.accounts,
+					customers: accounts.filter((item) => normalizeLower(item && item.role) === 'customer').length,
+					technicians: accounts.filter((item) => normalizeLower(item && item.role) === 'technician').length,
+					admins: accounts.filter((item) => normalizeLower(item && item.role) === 'admin').length
+				},
+				data: accounts
+			};
+		}
+
+		if (backupKind === 'requests') {
+			return {
+				metadata,
+				summary: {
+					total: summary.requests,
+					waiting: requests.filter((item) => getRequestBucket(item) === 'waiting').length,
+					accepted: requests.filter((item) => getRequestBucket(item) === 'accepted').length,
+					cancelled: requests.filter((item) => getRequestBucket(item) === 'cancelled').length
+				},
+				data: requests
+			};
+		}
+
+		if (backupKind === 'reports') {
+			await prepareAdminBackupAccess();
+			return {
+				metadata,
+				summary: {
+					total: summary.reports
+				},
+				data: reports,
+				realtime: await getReportsRealtimeBackup()
+			};
+		}
+
+		if (backupKind === 'session-logs') {
+			await prepareAdminBackupAccess();
+			return {
+				metadata,
+				summary: {
+					total: summary.sessionLogs,
+					selectedRole: normalizeLower(state.sessionRoleFilter || 'customer'),
+					selectedAction: normalizeLower(state.sessionActionFilter || 'login')
+				},
+				currentSelection: sessionLogs,
+				realtime: await getSessionLogsRealtimeBackup()
+			};
+		}
+
+		await prepareAdminBackupAccess();
+		const [customers, technicians, users, realtimeRequests, realtimeReports, realtimeSessionLogs] = await Promise.all([
+			readRealtimePathValue('customers'),
+			readRealtimePathValue('technicians'),
+			readRealtimePathValue('users'),
+			readRealtimePathValue('requests'),
+			getReportsRealtimeBackup(),
+			getSessionLogsRealtimeBackup()
+		]);
+
+		return {
+			metadata,
+			summary,
+			datasets: {
+				accounts,
+				requests,
+				reports,
+				currentSessionLogs: sessionLogs,
+				currentSessionFilter: {
+					role: normalizeLower(state.sessionRoleFilter || 'customer'),
+					action: normalizeLower(state.sessionActionFilter || 'login')
+				}
+			},
+			realtime: {
+				customers,
+				technicians,
+				users,
+				requests: realtimeRequests,
+				reports: realtimeReports,
+				sessionLogs: realtimeSessionLogs
+			}
+		};
+	}
+
+	async function handleBackupDownload(kind, button) {
+		const actionButton = button || null;
+		const originalLabel = actionButton ? actionButton.textContent : '';
+		const label = normalizeLower(kind || 'backup').replace(/-/g, ' ');
+
+		if (actionButton) {
+			actionButton.disabled = true;
+			actionButton.textContent = 'Preparing...';
+		}
+
+		setBackupStatus(`Preparing ${label} backup...`);
+
+		try {
+			const payload = await buildBackupPayload(kind);
+			downloadJsonFile(buildBackupFileName(kind), payload);
+			setBackupStatus(`Backup ready. Downloaded ${label} JSON successfully.`, 'success');
+		} catch (error) {
+			setBackupStatus(normalizeText(error && error.message) || `Failed to create ${label} backup.`, 'error');
+		} finally {
+			if (actionButton) {
+				actionButton.disabled = false;
+				actionButton.textContent = originalLabel;
+			}
+		}
+	}
+
 	function setFormMessage(message, isError) {
 		const element = document.getElementById('techFormMessage');
 		if (!element) return;
@@ -1187,6 +1613,41 @@
 		}, 2800);
 	}
 
+	function closeAccountActionConfirm(confirmed) {
+		const modal = document.getElementById('accountActionConfirmModal');
+		if (modal) modal.hidden = true;
+
+		if (typeof pendingAccountActionResolver === 'function') {
+			const resolve = pendingAccountActionResolver;
+			pendingAccountActionResolver = null;
+			resolve(!!confirmed);
+		}
+	}
+
+	function confirmAccountAction(account, shouldEnable) {
+		const modal = document.getElementById('accountActionConfirmModal');
+		const title = document.getElementById('accountActionConfirmTitle');
+		const message = document.getElementById('accountActionConfirmMessage');
+		const yesBtn = document.getElementById('accountActionConfirmYesBtn');
+		if (!modal || !title || !message || !yesBtn) {
+			return Promise.resolve(window.confirm(`Are you sure you want to ${shouldEnable ? 'enable' : 'disable'} this account?`));
+		}
+
+		const profileName = getProfileName(account);
+		title.textContent = `${shouldEnable ? 'Enable' : 'Disable'} account`;
+		message.textContent = `Are you sure you want to ${shouldEnable ? 'enable' : 'disable'} ${profileName}?`;
+		yesBtn.textContent = shouldEnable ? 'Yes, enable' : 'Yes, disable';
+
+		if (typeof pendingAccountActionResolver === 'function') {
+			pendingAccountActionResolver(false);
+		}
+
+		modal.hidden = false;
+		return new Promise((resolve) => {
+			pendingAccountActionResolver = resolve;
+		});
+	}
+
 	function startsWithWord(text, query) {
 		const source = normalizeLower(text);
 		const target = normalizeLower(query);
@@ -1218,12 +1679,12 @@
 			: accounts.filter((account) => normalizeLower(account && account.role) === filter);
 
 		const query = normalizeLower(state.accountSearchQuery || '');
-		const statusFilter = normalizeLower(state.accountStatusFilter || 'active');
+		const statusFilter = normalizeLower(state.accountStatusFilter || 'all');
 
 		return roleFiltered.filter((account) => {
-			const isOnline = isAccountOnline(account);
-			if (statusFilter === 'active' && !isOnline) return false;
-			if (statusFilter === 'inactive' && isOnline) return false;
+			const isEnabled = isAccountEnabled(account);
+			if (statusFilter === 'enabled' && !isEnabled) return false;
+			if (statusFilter === 'disabled' && isEnabled) return false;
 			if (!query) return true;
 			const name = getProfileName(account);
 			const email = normalizeText(account && account.email);
@@ -1254,17 +1715,25 @@
 
 		const accounts = Array.isArray(state.accounts) ? state.accounts : [];
 		if (!accounts.length) {
+			state.accountsPage = 1;
+			setTablePagination('accountsPageIndicator', 'accountsPrevPageBtn', 'accountsNextPageBtn', 1, 1);
 			tableBody.innerHTML = `<tr><td colspan="${columnCount}">No accounts found.</td></tr>`;
 			return;
 		}
 
 		const filtered = getFilteredAccounts(accounts);
 		if (!filtered.length) {
+			state.accountsPage = 1;
+			setTablePagination('accountsPageIndicator', 'accountsPrevPageBtn', 'accountsNextPageBtn', 1, 1);
 			tableBody.innerHTML = `<tr><td colspan="${columnCount}">No matching accounts for this filter.</td></tr>`;
 			return;
 		}
 
-		tableBody.innerHTML = filtered.map((account) => {
+		const pagination = getPaginatedItems(filtered, state.accountsPage, ACCOUNTS_PAGE_SIZE);
+		state.accountsPage = pagination.activePage;
+		setTablePagination('accountsPageIndicator', 'accountsPrevPageBtn', 'accountsNextPageBtn', pagination.activePage, pagination.pageCount);
+
+		tableBody.innerHTML = pagination.items.map((account) => {
 			const role = normalizeLower(account && account.role) || 'customer';
 			const accountId = normalizeText(account && (account.uid || account.id));
 			const technicianCode = role === 'technician'
@@ -1272,15 +1741,15 @@
 				: '-';
 			const ratingLabel = role === 'technician' ? getTechnicianRatingLabel(account) : '-';
 			const isEnabled = isAccountEnabled(account);
-			const status = isAccountOnline(account) ? 'Active' : 'Inactive';
+			const status = getAccountStatusText(account);
 			const skills = toSkillsArray(
 				account && (account.skills || account.specialties || account.serviceCategories || account.fields || account.field)
 			);
 			let actions = '-';
 			if (role === 'customer') {
-				actions = `<button type="button" class="row-action-btn ${isEnabled ? 'danger' : 'secondary'}" data-action="toggle-customer" data-user-id="${escapeHtml(accountId)}" data-next-state="${isEnabled ? 'disable' : 'enable'}">${isEnabled ? 'Disable' : 'Enable'}</button>`;
+				actions = `<button type="button" class="row-action-btn ${isEnabled ? 'danger' : 'success'}" data-action="toggle-customer" data-user-id="${escapeHtml(accountId)}" data-next-state="${isEnabled ? 'disable' : 'enable'}">${isEnabled ? 'Disable' : 'Enable'}</button>`;
 			} else if (role === 'technician') {
-				actions = `<button type="button" class="row-action-btn ${isEnabled ? 'danger' : 'secondary'}" data-action="toggle-technician" data-user-id="${escapeHtml(accountId)}" data-next-state="${isEnabled ? 'disable' : 'enable'}">${isEnabled ? 'Disable' : 'Enable'}</button>`;
+				actions = `<button type="button" class="row-action-btn ${isEnabled ? 'danger' : 'success'}" data-action="toggle-technician" data-user-id="${escapeHtml(accountId)}" data-next-state="${isEnabled ? 'disable' : 'enable'}">${isEnabled ? 'Disable' : 'Enable'}</button>`;
 			}
 			return `
 				<tr>
@@ -1363,10 +1832,12 @@
 					state.sessionLogs = Array.isArray(items) ? items : [];
 					state.sessionLogsPage = 1;
 					renderSessionLogsTable();
+					renderBackupSummary();
 				},
 				(error) => {
 					state.sessionLogs = [];
 					state.sessionLogsPage = 1;
+					renderBackupSummary();
 					const errorCode = normalizeLower(error && error.code);
 					if (tableBody && (errorCode.includes('permission') || errorCode.includes('denied'))) {
 						tableBody.innerHTML = '<tr><td colspan="4">Permission denied while loading logs. Check Firebase sessionLogs rules.</td></tr>';
@@ -1381,6 +1852,7 @@
 
 		state.sessionLogs = [];
 		state.sessionLogsPage = 1;
+		renderBackupSummary();
 		if (tableBody) tableBody.innerHTML = '<tr><td colspan="4">Session logs are unavailable.</td></tr>';
 	}
 
@@ -1390,11 +1862,17 @@
 
 		const list = Array.isArray(state.reports) ? state.reports : [];
 		if (!list.length) {
+			state.reportsPage = 1;
+			setTablePagination('reportsPageIndicator', 'reportsPrevPageBtn', 'reportsNextPageBtn', 1, 1);
 			tableBody.innerHTML = '<tr><td colspan="6">No technician reports yet.</td></tr>';
 			return;
 		}
 
-		tableBody.innerHTML = list.map((item) => {
+		const pagination = getPaginatedItems(list, state.reportsPage, REPORTS_PAGE_SIZE);
+		state.reportsPage = pagination.activePage;
+		setTablePagination('reportsPageIndicator', 'reportsPrevPageBtn', 'reportsNextPageBtn', pagination.activePage, pagination.pageCount);
+
+		tableBody.innerHTML = pagination.items.map((item) => {
 			const requestCode = normalizeText(item && (item.requestCode || item.requestId || item.bookingCode || item.bookingId)) || '-';
 			const customerName = normalizeText(item && item.customerName) || normalizeText(item && item.customerEmail) || normalizeText(item && item.customerId) || '-';
 			const technicianId = formatTechnicianReference(
@@ -1421,6 +1899,7 @@
 	async function loadReports(options) {
 		const allowReauthRetry = !options || options.allowReauthRetry !== false;
 		const tableBody = document.getElementById('reportsTableBody');
+		setTablePagination('reportsPageIndicator', 'reportsPrevPageBtn', 'reportsNextPageBtn', 1, 1);
 		if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading reports...</td></tr>';
 
 		if (typeof unsubscribeReports === 'function') {
@@ -1431,6 +1910,7 @@
 		const rtdb = getRealtimeDatabase();
 		if (!rtdb) {
 			state.reports = [];
+			renderBackupSummary();
 			if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Realtime Database is unavailable.</td></tr>';
 			return;
 		}
@@ -1473,6 +1953,7 @@
 			reports.sort((left, right) => getTimestampFromRecord(right) - getTimestampFromRecord(left));
 			state.reports = reports;
 			renderReportsTable();
+			renderBackupSummary();
 		};
 
 		const makeSuccess = (path) => (snapshot) => {
@@ -1490,6 +1971,7 @@
 				}
 
 				state.reports = [];
+				renderBackupSummary();
 				if (allowReauthRetry) {
 					if (typeof unsubscribeReports === 'function') {
 						unsubscribeReports();
@@ -1512,6 +1994,7 @@
 
 			if (!requiredPath) return;
 			state.reports = [];
+			renderBackupSummary();
 			if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Failed to load reports.</td></tr>';
 		};
 
@@ -1565,17 +2048,50 @@
 	async function setAccountActiveState(userId, shouldEnable, triggerButton) {
 		const id = normalizeText(userId);
 		if (!id) return;
+		const account = getAccountById(id);
+		const role = normalizeLower(account && account.role);
+		const email = normalizeLower(account && (account.email || account.emailAddress || account.email_address));
 
 		if (triggerButton) triggerButton.disabled = true;
 
 		try {
+			if (usersDb && usersDb.auth && !usersDb.auth.currentUser) {
+				const session = readAdminSession();
+				try {
+					await ensureDemoAdminFirebaseAuth(session);
+				} catch (_) {
+				}
+				await waitForCurrentAuthUser(3500);
+			}
+
+			const activeAuthUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
+			if (!activeAuthUser) {
+				throw new Error('Admin authentication is unavailable');
+			}
+
+			await ensureAdminRealtimeAccess(activeAuthUser);
+
+			let updated = false;
+			let lastError = null;
+
 			if (usersDb && typeof usersDb.updateUserProfile === 'function') {
-				await usersDb.updateUserProfile(id, {
-					isActive: !!shouldEnable,
-					updatedAt: Date.now()
-				});
-			} else {
-				throw new Error('Profile update service unavailable');
+				try {
+					await usersDb.updateUserProfile(id, {
+						role: role || undefined,
+						isActive: !!shouldEnable,
+						updatedAt: Date.now()
+					});
+					updated = true;
+				} catch (error) {
+					lastError = error;
+				}
+			}
+
+			if (!updated) {
+				await updateAccountActiveStateInRealtime(id, shouldEnable, role, email);
+			}
+			if (!updated && lastError) {
+				lastError = null;
 			}
 		} catch (_) {
 			if (triggerButton) triggerButton.disabled = false;
@@ -1602,6 +2118,7 @@
 		setText('ovTechnicianAccounts', String(technicians.length));
 		setText('ovPendingRequests', String(pendingRequests.length));
 		setText('ovInProgressRequests', String(inProgressRequests.length));
+		renderBackupSummary();
 
 		const body = document.getElementById('overviewRequestsTableBody');
 		if (!body) return;
@@ -1699,14 +2216,19 @@
 			.sort((left, right) => toDateValue((right && right.createdAt) || (right && right.technicianUpdatedAt)) - toDateValue((left && left.createdAt) || (left && left.technicianUpdatedAt)));
 
 		if (!filtered.length) {
+			state.requestsPage = 1;
 			state.visibleRequests = [];
+			setTablePagination('requestsPageIndicator', 'requestsPrevPageBtn', 'requestsNextPageBtn', 1, 1);
 			tableBody.innerHTML = `<tr><td colspan="9">No ${labelMap[activeFilter] ? labelMap[activeFilter].toLowerCase() : 'matching'} requests found.</td></tr>`;
 			return;
 		}
 
-		state.visibleRequests = filtered.slice();
+		const pagination = getPaginatedItems(filtered, state.requestsPage, REQUESTS_PAGE_SIZE);
+		state.requestsPage = pagination.activePage;
+		state.visibleRequests = pagination.items.slice();
+		setTablePagination('requestsPageIndicator', 'requestsPrevPageBtn', 'requestsNextPageBtn', pagination.activePage, pagination.pageCount);
 
-		tableBody.innerHTML = filtered.map((item, index) => `
+		tableBody.innerHTML = pagination.items.map((item, index) => `
 			<tr>
 				<td>${escapeHtml(formatRequestCode(item))}</td>
 				<td>${renderRequestSessionLogCell(item)}</td>
@@ -2032,6 +2554,7 @@
 	async function loadAccounts() {
 		const tableBody = document.getElementById('accountsTableBody');
 		if (!tableBody) return;
+		setTablePagination('accountsPageIndicator', 'accountsPrevPageBtn', 'accountsNextPageBtn', 1, 1);
 		tableBody.innerHTML = `<tr><td colspan="${getAccountsTableColumnCount()}">Loading accounts...</td></tr>`;
 
 		if (typeof unsubscribeAccounts === 'function') {
@@ -2130,6 +2653,7 @@
 		if (!db) {
 			tableBody.innerHTML = `<tr><td colspan="${getAccountsTableColumnCount()}">Firebase is not configured or unavailable.</td></tr>`;
 			state.accounts = [];
+			state.accountsPage = 1;
 			renderOverview();
 			return [];
 		}
@@ -2141,6 +2665,7 @@
 		} catch (_) {
 			tableBody.innerHTML = `<tr><td colspan="${getAccountsTableColumnCount()}">Failed to load accounts from Firebase.</td></tr>`;
 			state.accounts = [];
+			state.accountsPage = 1;
 			renderOverview();
 			return [];
 		}
@@ -2200,6 +2725,7 @@
 	async function loadRequests() {
 		const tableBody = document.getElementById('requestsTableBody');
 		if (!tableBody) return;
+		setTablePagination('requestsPageIndicator', 'requestsPrevPageBtn', 'requestsNextPageBtn', 1, 1);
 		tableBody.innerHTML = '<tr><td colspan="9">Loading requests...</td></tr>';
 
 		if (typeof unsubscribeRequests === 'function') {
@@ -2228,6 +2754,8 @@
 				tableBody.innerHTML = '<tr><td colspan="9">Failed to load requests from Firebase Realtime Database.</td></tr>';
 				state.requests = [];
 				state.allRequests = [];
+				state.requestsPage = 1;
+				state.visibleRequests = [];
 				renderOverview();
 			};
 
@@ -2245,6 +2773,8 @@
 				tableBody.innerHTML = '<tr><td colspan="9">Failed to load requests from Firebase.</td></tr>';
 				state.requests = [];
 				state.allRequests = [];
+				state.requestsPage = 1;
+				state.visibleRequests = [];
 				renderOverview();
 			});
 			return state.allRequests;
@@ -2253,6 +2783,8 @@
 		tableBody.innerHTML = '<tr><td colspan="9">Firebase Realtime Database is not configured or unavailable.</td></tr>';
 		state.requests = [];
 		state.allRequests = [];
+		state.requestsPage = 1;
+		state.visibleRequests = [];
 		renderOverview();
 		return [];
 	}
@@ -2536,20 +3068,20 @@
 			});
 
 			if (section === 'accounts') {
-				if (targetFilter) {
-					state.accountRoleFilter = targetFilter;
-				} else if (!state.accountRoleFilter) {
-					state.accountRoleFilter = 'all';
+				const nextAccountFilter = targetFilter || state.accountRoleFilter || 'all';
+				if (normalizeLower(nextAccountFilter) !== normalizeLower(state.accountRoleFilter || 'all')) {
+					state.accountsPage = 1;
 				}
+				state.accountRoleFilter = nextAccountFilter;
 				renderAccountsTable();
 			}
 
 			if (section === 'requests') {
-				if (targetRequestFilter) {
-					state.requestStatusFilter = targetRequestFilter;
-				} else if (!state.requestStatusFilter) {
-					state.requestStatusFilter = 'waiting';
+				const nextRequestFilter = targetRequestFilter || state.requestStatusFilter || 'waiting';
+				if (normalizeLower(nextRequestFilter) !== normalizeLower(state.requestStatusFilter || 'waiting')) {
+					state.requestsPage = 1;
 				}
+				state.requestStatusFilter = nextRequestFilter;
 				renderRequestsTable();
 			}
 		}
@@ -2583,7 +3115,14 @@
 		const accountSearchInput = document.getElementById('accountSearchInput');
 		const accountStatusFilter = document.getElementById('accountStatusFilter');
 		const accountsTableBody = document.getElementById('accountsTableBody');
+		const accountsPrevPageBtn = document.getElementById('accountsPrevPageBtn');
+		const accountsNextPageBtn = document.getElementById('accountsNextPageBtn');
+		const accountActionConfirmModal = document.getElementById('accountActionConfirmModal');
+		const accountActionConfirmNoBtn = document.getElementById('accountActionConfirmNoBtn');
+		const accountActionConfirmYesBtn = document.getElementById('accountActionConfirmYesBtn');
 		const requestsTableBody = document.getElementById('requestsTableBody');
+		const requestsPrevPageBtn = document.getElementById('requestsPrevPageBtn');
+		const requestsNextPageBtn = document.getElementById('requestsNextPageBtn');
 		const requestDetailModal = document.getElementById('adminRequestDetailModal');
 		const requestDetailCloseBtn = document.getElementById('adminRequestDetailCloseBtn');
 		const requestDetailDoneBtn = document.getElementById('adminRequestDetailDoneBtn');
@@ -2592,6 +3131,13 @@
 		const sessionPrevPageBtn = document.getElementById('sessionPrevPageBtn');
 		const sessionNextPageBtn = document.getElementById('sessionNextPageBtn');
 		const refreshReportsBtn = document.getElementById('refreshReportsBtn');
+		const reportsPrevPageBtn = document.getElementById('reportsPrevPageBtn');
+		const reportsNextPageBtn = document.getElementById('reportsNextPageBtn');
+		const downloadFullBackupBtn = document.getElementById('downloadFullBackupBtn');
+		const downloadAccountsBackupBtn = document.getElementById('downloadAccountsBackupBtn');
+		const downloadRequestsBackupBtn = document.getElementById('downloadRequestsBackupBtn');
+		const downloadReportsBackupBtn = document.getElementById('downloadReportsBackupBtn');
+		const downloadSessionLogsBackupBtn = document.getElementById('downloadSessionLogsBackupBtn');
 		const addTechnicianForm = document.getElementById('addTechnicianForm');
 		const closeInvitePopupBtn = document.getElementById('closeInvitePopupBtn');
 		const inviteSentPopup = document.getElementById('inviteSentPopup');
@@ -2605,6 +3151,7 @@
 
 		if (refreshAccountsBtn) {
 			refreshAccountsBtn.addEventListener('click', async () => {
+				state.accountsPage = 1;
 				await loadAccounts();
 			});
 		}
@@ -2612,6 +3159,7 @@
 		if (accountSearchInput) {
 			accountSearchInput.addEventListener('input', () => {
 				state.accountSearchQuery = normalizeText(accountSearchInput.value || '');
+				state.accountsPage = 1;
 				renderAccountsTable();
 			});
 		}
@@ -2620,6 +3168,23 @@
 			accountStatusFilter.value = 'all';
 			accountStatusFilter.addEventListener('change', () => {
 				state.accountStatusFilter = normalizeLower(accountStatusFilter.value || 'all');
+				state.accountsPage = 1;
+				renderAccountsTable();
+			});
+		}
+
+		if (accountsPrevPageBtn) {
+			accountsPrevPageBtn.addEventListener('click', () => {
+				state.accountsPage = Math.max(1, (Number(state.accountsPage) || 1) - 1);
+				renderAccountsTable();
+			});
+		}
+
+		if (accountsNextPageBtn) {
+			accountsNextPageBtn.addEventListener('click', () => {
+				const total = getFilteredAccounts(Array.isArray(state.accounts) ? state.accounts : []).length;
+				const pageCount = Math.max(1, Math.ceil(total / ACCOUNTS_PAGE_SIZE));
+				state.accountsPage = Math.min(pageCount, (Number(state.accountsPage) || 1) + 1);
 				renderAccountsTable();
 			});
 		}
@@ -2634,13 +3199,53 @@
 				const action = normalizeLower(actionBtn.getAttribute('data-action'));
 				if (action !== 'toggle-customer' && action !== 'toggle-technician') return;
 				const shouldEnable = normalizeLower(actionBtn.getAttribute('data-next-state')) === 'enable';
+				const account = getAccountById(actionBtn.getAttribute('data-user-id'));
+				const confirmed = await confirmAccountAction(account, shouldEnable);
+				if (!confirmed) return;
 				await setAccountActiveState(actionBtn.getAttribute('data-user-id'), shouldEnable, actionBtn);
+			});
+		}
+
+		if (accountActionConfirmNoBtn) {
+			accountActionConfirmNoBtn.addEventListener('click', () => {
+				closeAccountActionConfirm(false);
+			});
+		}
+
+		if (accountActionConfirmYesBtn) {
+			accountActionConfirmYesBtn.addEventListener('click', () => {
+				closeAccountActionConfirm(true);
+			});
+		}
+
+		if (accountActionConfirmModal) {
+			accountActionConfirmModal.addEventListener('click', (event) => {
+				if (event.target === accountActionConfirmModal) {
+					closeAccountActionConfirm(false);
+				}
 			});
 		}
 
 		if (refreshRequestsBtn) {
 			refreshRequestsBtn.addEventListener('click', async () => {
+				state.requestsPage = 1;
 				await loadRequests();
+			});
+		}
+
+		if (requestsPrevPageBtn) {
+			requestsPrevPageBtn.addEventListener('click', () => {
+				state.requestsPage = Math.max(1, (Number(state.requestsPage) || 1) - 1);
+				renderRequestsTable();
+			});
+		}
+
+		if (requestsNextPageBtn) {
+			requestsNextPageBtn.addEventListener('click', () => {
+				const total = getFilteredRequests(state.allRequests, state.requestStatusFilter).length;
+				const pageCount = Math.max(1, Math.ceil(total / REQUESTS_PAGE_SIZE));
+				state.requestsPage = Math.min(pageCount, (Number(state.requestsPage) || 1) + 1);
+				renderRequestsTable();
 			});
 		}
 
@@ -2735,9 +3340,39 @@
 
 		if (refreshReportsBtn) {
 			refreshReportsBtn.addEventListener('click', async () => {
+				state.reportsPage = 1;
 				await loadReports();
 			});
 		}
+
+		if (reportsPrevPageBtn) {
+			reportsPrevPageBtn.addEventListener('click', () => {
+				state.reportsPage = Math.max(1, (Number(state.reportsPage) || 1) - 1);
+				renderReportsTable();
+			});
+		}
+
+		if (reportsNextPageBtn) {
+			reportsNextPageBtn.addEventListener('click', () => {
+				const total = Array.isArray(state.reports) ? state.reports.length : 0;
+				const pageCount = Math.max(1, Math.ceil(total / REPORTS_PAGE_SIZE));
+				state.reportsPage = Math.min(pageCount, (Number(state.reportsPage) || 1) + 1);
+				renderReportsTable();
+			});
+		}
+
+		[
+			['full', downloadFullBackupBtn],
+			['accounts', downloadAccountsBackupBtn],
+			['requests', downloadRequestsBackupBtn],
+			['reports', downloadReportsBackupBtn],
+			['session-logs', downloadSessionLogsBackupBtn]
+		].forEach(([kind, button]) => {
+			if (!button) return;
+			button.addEventListener('click', async () => {
+				await handleBackupDownload(kind, button);
+			});
+		});
 
 		bindSessionFilters();
 
@@ -2873,6 +3508,7 @@
 		bindNavigation();
 		bindSidebarToggle();
 		bindEvents();
+		renderBackupSummary();
 		startSessionPresenceTracking();
 		Promise.all([loadAccounts(), loadRequests(), loadSessionLogs()]);
 		loadReports();

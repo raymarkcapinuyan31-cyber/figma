@@ -159,6 +159,24 @@ body::after{
   text-align:center;
 }
 
+.auth-notice{
+  margin-top:18px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid #f1c3c0;
+  background:#fff2f1;
+  color:#9d2f2b;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.45;
+}
+
+.auth-notice.success{
+  border-color:#c7e7d2;
+  background:#edf9f1;
+  color:#1e7a45;
+}
+
 .login-form{margin-top:40px}
 
 .input-wrapper{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}

@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>Admin Dashboard - HomeFixSolution</title>
-	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260318c">
+	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260319d">
 </head>
 <body>
 	<div class="app-shell">
@@ -49,6 +49,7 @@
 						</div>
 					</details>
 					<p class="nav-section-title nav-section-title-spaced">Monitoring</p>
+					<button class="nav-link" type="button" data-section="backup">Backup Files</button>
 					<button class="nav-link" type="button" data-section="reports">Reports</button>
 					<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
 				</div>
@@ -106,8 +107,8 @@
 							<input type="search" id="accountSearchInput" class="search-input" placeholder="Search name or email" aria-label="Search accounts">
 							<select id="accountStatusFilter" class="filter-select" aria-label="Filter account status">
 								<option value="all" selected>All Status</option>
-								<option value="active">Active</option>
-								<option value="inactive">Inactive</option>
+								<option value="enabled">Enabled</option>
+								<option value="disabled">Disabled</option>
 							</select>
 							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshAccountsBtn" aria-label="Refresh accounts" title="Refresh accounts">
 								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
@@ -132,6 +133,11 @@
 								<tr><td colspan="5">Loading accounts...</td></tr>
 							</tbody>
 						</table>
+					</div>
+					<div class="table-pagination" id="accountsPagination">
+						<button type="button" class="btn-secondary" id="accountsPrevPageBtn">Previous</button>
+						<span id="accountsPageIndicator">Page 1 of 1</span>
+						<button type="button" class="btn-secondary" id="accountsNextPageBtn">Next</button>
 					</div>
 				</section>
 
@@ -227,6 +233,11 @@
 							</tbody>
 						</table>
 					</div>
+					<div class="table-pagination" id="requestsPagination">
+						<button type="button" class="btn-secondary" id="requestsPrevPageBtn">Previous</button>
+						<span id="requestsPageIndicator">Page 1 of 1</span>
+						<button type="button" class="btn-secondary" id="requestsNextPageBtn">Next</button>
+					</div>
 
 				</section>
 
@@ -295,6 +306,61 @@
 							</tbody>
 						</table>
 					</div>
+					<div class="table-pagination" id="reportsPagination">
+						<button type="button" class="btn-secondary" id="reportsPrevPageBtn">Previous</button>
+						<span id="reportsPageIndicator">Page 1 of 1</span>
+						<button type="button" class="btn-secondary" id="reportsNextPageBtn">Next</button>
+					</div>
+				</section>
+
+				<section class="panel" id="backup" data-panel="backup" hidden>
+					<div class="panel-head backup-head">
+						<div>
+							<h1 class="panel-title">BACKUP FILES</h1>
+							<p class="panel-description">Download backup JSON files.</p>
+						</div>
+					</div>
+
+					<div class="backup-grid">
+						<article class="backup-card backup-card-featured">
+							<p class="backup-card-kicker">Recommended</p>
+							<h2>Full Admin Backup</h2>
+							<p>All admin data in one file.</p>
+							<div class="backup-meta-list">
+								<span>Accounts: <strong id="backupAccountsCount">0</strong></span>
+								<span>Requests: <strong id="backupRequestsCount">0</strong></span>
+								<span>Reports: <strong id="backupReportsCount">0</strong></span>
+								<span>Session Logs: <strong id="backupSessionLogsCount">0</strong></span>
+							</div>
+							<button type="button" class="btn-primary" id="downloadFullBackupBtn">Download Full Backup</button>
+						</article>
+
+						<article class="backup-card">
+							<h2>Accounts Backup</h2>
+							<p>Customer, technician, and admin accounts.</p>
+							<button type="button" class="btn-secondary" id="downloadAccountsBackupBtn">Download Accounts JSON</button>
+						</article>
+
+						<article class="backup-card">
+							<h2>Requests Backup</h2>
+							<p>All booking and service requests.</p>
+							<button type="button" class="btn-secondary" id="downloadRequestsBackupBtn">Download Requests JSON</button>
+						</article>
+
+						<article class="backup-card">
+							<h2>Reports Backup</h2>
+							<p>Technician report records.</p>
+							<button type="button" class="btn-secondary" id="downloadReportsBackupBtn">Download Reports JSON</button>
+						</article>
+
+						<article class="backup-card">
+							<h2>Session Logs Backup</h2>
+							<p>Login and logout session logs.</p>
+							<button type="button" class="btn-secondary" id="downloadSessionLogsBackupBtn">Download Session Logs JSON</button>
+						</article>
+					</div>
+
+					<p class="backup-status" id="backupStatusMessage" role="status" aria-live="polite">Ready to create a backup file.</p>
 				</section>
 			</main>
 		</div>
@@ -308,6 +374,17 @@
 			<button type="button" class="btn-primary" id="closeInvitePopupBtn">OK</button>
 		</div>
 	</div>
+
+		<div class="confirm-popup-backdrop" id="accountActionConfirmModal" hidden>
+			<div class="confirm-popup-card" role="dialog" aria-modal="true" aria-labelledby="accountActionConfirmTitle" aria-describedby="accountActionConfirmMessage">
+				<h2 id="accountActionConfirmTitle">Confirm account action</h2>
+				<p id="accountActionConfirmMessage">Are you sure you want to update this account?</p>
+				<div class="confirm-popup-actions">
+					<button type="button" class="btn-secondary" id="accountActionConfirmNoBtn">No</button>
+					<button type="button" class="btn-primary" id="accountActionConfirmYesBtn">Yes</button>
+				</div>
+			</div>
+		</div>
 
 	<div class="request-detail-backdrop" id="adminRequestDetailModal" hidden>
 		<div class="request-detail-card" role="dialog" aria-modal="true" aria-labelledby="adminRequestDetailTitle">
@@ -341,9 +418,9 @@
 	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 	<script src="../../firebase/config/firebase-config.js"></script>
 	<script src="../../databasehfs/users/core.js?v=20260312a"></script>
-	<script src="../../databasehfs/users/user-profile-database.js?v=20260312a"></script>
+	<script src="../../databasehfs/users/user-profile-database.js?v=20260319c"></script>
 	<script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
 	<script src="../../databasehfs/users/user-database.js"></script>
-	<script src="../../Js/admin/dashboard.js?v=20260318a"></script>
+	<script src="../../Js/admin/dashboard.js?v=20260319d"></script>
 </body>
 </html>

@@ -459,6 +459,85 @@
     return String(value || '').trim().toLowerCase() === 'admin';
   }
 
+  function isExplicitlyDisabled(record) {
+    return !!(record && typeof record === 'object' && Object.prototype.hasOwnProperty.call(record, 'isActive') && record.isActive === false);
+  }
+
+  function applyResolvedAccountFlags(baseData, relatedRecords) {
+    const normalizedBase = baseData && typeof baseData === 'object' ? Object.assign({}, baseData) : {};
+    const records = Array.isArray(relatedRecords) ? relatedRecords : [];
+    if (records.some((record) => isExplicitlyDisabled(record))) {
+      normalizedBase.isActive = false;
+    }
+    return normalizedBase;
+  }
+
+  function collectSnapshotRecords(snapshot, rootPath) {
+    if (!snapshot || typeof snapshot.val !== 'function') return [];
+    const value = snapshot.val() || {};
+    return Object.keys(value).map((id) => ({
+      path: rootPath,
+      id,
+      data: value[id] && typeof value[id] === 'object' ? value[id] : {}
+    }));
+  }
+
+  async function listRealtimeUserRecordsByEmail(rtdb, email) {
+    const cleanEmail = core.normalizeEmail(email);
+    if (!rtdb || !cleanEmail) return [];
+
+    const fieldCandidates = ['email', 'emailAddress', 'email_address'];
+    const rootConfigs = [
+      { path: RTDB_CUSTOMERS_PATH, ref: rtdb.ref(RTDB_CUSTOMERS_PATH) },
+      { path: RTDB_TECHNICIANS_PATH, ref: rtdb.ref(RTDB_TECHNICIANS_PATH) },
+      { path: RTDB_USERS_PATH, ref: rtdb.ref(RTDB_USERS_PATH) }
+    ];
+    const seen = new Set();
+    const matches = [];
+
+    for (let fieldIndex = 0; fieldIndex < fieldCandidates.length; fieldIndex += 1) {
+      const field = fieldCandidates[fieldIndex];
+      for (let rootIndex = 0; rootIndex < rootConfigs.length; rootIndex += 1) {
+        const config = rootConfigs[rootIndex];
+        let snapshot = null;
+        try {
+          snapshot = await config.ref.orderByChild(field).equalTo(cleanEmail).once('value');
+        } catch (_) {
+          snapshot = null;
+        }
+
+        collectSnapshotRecords(snapshot, config.path).forEach((item) => {
+          const key = `${item.path}:${item.id}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          matches.push(item);
+        });
+      }
+    }
+
+    return matches;
+  }
+
+  async function isRealtimeAccountDisabledByIdentity(rtdb, uid, email) {
+    const cleanUid = String(uid || '').trim();
+    const cleanEmail = core.normalizeEmail(email);
+    const records = [];
+
+    if (cleanUid) {
+      const byId = await getRealtimeUserRecordById(rtdb, cleanUid);
+      if (byId && byId.data) records.push(byId.data);
+    }
+
+    if (cleanEmail) {
+      const byEmailRecords = await listRealtimeUserRecordsByEmail(rtdb, cleanEmail);
+      byEmailRecords.forEach((item) => {
+        if (item && item.data) records.push(item.data);
+      });
+    }
+
+    return records.some((record) => isExplicitlyDisabled(record));
+  }
+
   function getPreferredUserRootByRole(roleValue) {
     if (isCustomerRole(roleValue)) return RTDB_CUSTOMERS_PATH;
     if (isTechnicianRole(roleValue)) return RTDB_TECHNICIANS_PATH;
@@ -572,10 +651,10 @@
         return {
           path: RTDB_TECHNICIANS_PATH,
           id: cleanUid,
-          data: Object.assign({}, technicianData, {
+          data: applyResolvedAccountFlags(Object.assign({}, technicianData, {
             uid: cleanUid,
             role: isKnownRole(technicianData.role) ? String(technicianData.role).trim().toLowerCase() : 'technician'
-          })
+          }), [customerData, technicianData, userData])
         };
       }
 
@@ -584,25 +663,41 @@
         return {
           path: RTDB_TECHNICIANS_PATH,
           id: cleanUid,
-          data: Object.assign({}, userData, { uid: cleanUid, role: 'technician' })
+          data: applyResolvedAccountFlags(Object.assign({}, userData, { uid: cleanUid, role: 'technician' }), [customerData, technicianData, userData])
         };
       }
 
       if (userData && isAdminRole(userRole)) {
-        return { path: RTDB_USERS_PATH, id: cleanUid, data: Object.assign({}, userData, { uid: cleanUid, role: 'admin' }) };
+        return {
+          path: RTDB_USERS_PATH,
+          id: cleanUid,
+          data: applyResolvedAccountFlags(Object.assign({}, userData, { uid: cleanUid, role: 'admin' }), [customerData, technicianData, userData])
+        };
       }
 
       // Prefer explicit non-customer roles when duplicate roots exist.
       if (customerData) {
-        return { path: RTDB_CUSTOMERS_PATH, id: cleanUid, data: customerData };
+        return {
+          path: RTDB_CUSTOMERS_PATH,
+          id: cleanUid,
+          data: applyResolvedAccountFlags(customerData, [customerData, technicianData, userData])
+        };
       }
       if (userData) {
         const role = String(userData && userData.role ? userData.role : '').trim().toLowerCase();
         if (isCustomerRole(role)) {
           await migrateCustomerNodeToCustomers(rtdb, cleanUid, userData);
-          return { path: RTDB_CUSTOMERS_PATH, id: cleanUid, data: Object.assign({}, userData, { role: 'customer' }) };
+          return {
+            path: RTDB_CUSTOMERS_PATH,
+            id: cleanUid,
+            data: applyResolvedAccountFlags(Object.assign({}, userData, { role: 'customer' }), [customerData, technicianData, userData])
+          };
         }
-        return { path: RTDB_USERS_PATH, id: cleanUid, data: Object.assign({}, userData, { uid: cleanUid, role: role || 'admin' }) };
+        return {
+          path: RTDB_USERS_PATH,
+          id: cleanUid,
+          data: applyResolvedAccountFlags(Object.assign({}, userData, { uid: cleanUid, role: role || 'admin' }), [customerData, technicianData, userData])
+        };
       }
       return null;
     });
@@ -652,7 +747,10 @@
       }
 
       if (techniciansResult) {
-        techniciansResult.data = Object.assign({}, techniciansResult.data || {}, { role: 'technician' });
+        techniciansResult.data = applyResolvedAccountFlags(
+          Object.assign({}, techniciansResult.data || {}, { role: 'technician' }),
+          [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+        );
         return techniciansResult;
       }
 
@@ -663,7 +761,10 @@
           return {
             path: RTDB_TECHNICIANS_PATH,
             id: usersResult.id,
-            data: Object.assign({}, usersResult.data || {}, { role: 'technician' })
+            data: applyResolvedAccountFlags(
+              Object.assign({}, usersResult.data || {}, { role: 'technician' }),
+              [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+            )
           };
         }
       }
@@ -671,11 +772,19 @@
       if (usersResult) {
         const role = String(usersResult.data && usersResult.data.role ? usersResult.data.role : '').trim().toLowerCase();
         if (isAdminRole(role)) {
+          usersResult.data = applyResolvedAccountFlags(
+            Object.assign({}, usersResult.data || {}),
+            [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+          );
           return usersResult;
         }
       }
 
       if (customersResult) {
+        customersResult.data = applyResolvedAccountFlags(
+          Object.assign({}, customersResult.data || {}),
+          [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+        );
         return customersResult;
       }
 
@@ -686,13 +795,19 @@
           return {
             path: RTDB_CUSTOMERS_PATH,
             id: usersResult.id,
-            data: Object.assign({}, usersResult.data || {}, { role: 'customer' })
+            data: applyResolvedAccountFlags(
+              Object.assign({}, usersResult.data || {}, { role: 'customer' }),
+              [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+            )
           };
         }
         return {
           path: RTDB_USERS_PATH,
           id: usersResult.id,
-          data: Object.assign({}, usersResult.data || {}, { role: role || 'admin' })
+          data: applyResolvedAccountFlags(
+            Object.assign({}, usersResult.data || {}, { role: role || 'admin' }),
+            [customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+          )
         };
       }
 
@@ -1110,7 +1225,27 @@
     async signInWithEmail(email, password) {
       if (core.forceFirebaseOnly && core.mode !== 'firebase') throw core.buildFirebaseRequiredError();
       const userCredential = await core.auth.signInWithEmailAndPassword(email, password);
-      return userCredential.user;
+      const user = userCredential && userCredential.user ? userCredential.user : null;
+
+      if (core.mode === 'firebase' && user && user.uid && hasRealtimeDatabase()) {
+        try {
+          const rtdb = getRealtimeDb();
+          const disabled = await isRealtimeAccountDisabledByIdentity(rtdb, user.uid, user.email || email);
+          if (disabled) {
+            try {
+              await core.auth.signOut();
+            } catch (_) {
+            }
+            const err = new Error('Your account has been disabled. Please contact the administrator for assistance.');
+            err.code = 'auth/user-disabled';
+            throw err;
+          }
+        } catch (error) {
+          if (error && error.code === 'auth/user-disabled') throw error;
+        }
+      }
+
+      return user;
     },
 
     async signOut() {
