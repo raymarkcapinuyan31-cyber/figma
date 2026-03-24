@@ -61,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const QUICK_REPLIES = [
     'Hello, any update on my request?',
-    'Please call or message me when you arrive.',
     'What time will you arrive?',
     'Thank you.'
   ];
@@ -418,48 +417,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function startOwnPresenceTracking() {
     stopOwnPresenceTracking();
-
-    if (!activeUser || !activeUser.uid) return;
-    const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
-      ? usersDb.firebase.database()
-      : null;
-    if (!rtdb) return;
-
-    const uid = normalizeText(activeUser.uid);
-    const connectedRef = rtdb.ref('.info/connected');
-    const presenceRef = rtdb.ref(`presence/${uid}`);
-    const serverTimestamp = usersDb && usersDb.firebase && usersDb.firebase.database && usersDb.firebase.database.ServerValue
-      ? usersDb.firebase.database.ServerValue.TIMESTAMP
-      : Date.now();
-
-    const onConnected = (snapshot) => {
-      if (!snapshot || snapshot.val() !== true) return;
-
-      presenceRef.onDisconnect().set({
-        uid,
-        role: 'customer',
-        state: 'offline',
-        lastChanged: serverTimestamp
-      });
-
-      presenceRef.set({
-        uid,
-        role: 'customer',
-        state: 'online',
-        lastChanged: serverTimestamp
-      });
-    };
-
-    connectedRef.on('value', onConnected);
-    unsubscribeOwnPresence = () => {
-      connectedRef.off('value', onConnected);
-      presenceRef.set({
-        uid,
-        role: 'customer',
-        state: 'offline',
-        lastChanged: Date.now()
-      }).catch(() => {});
-    };
   }
 
   function getAssignedTechnicianUid(item) {
@@ -472,40 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function bindPeerPresence(item, requestId) {
-    const uid = getAssignedTechnicianUid(item);
     updateAssignedTechnicianLine(item, requestId);
-
-    if (!uid) {
-      stopPeerPresenceSubscription();
-      return;
-    }
-
-    if (uid === activePeerPresenceUid && typeof unsubscribePeerPresence === 'function') {
-      return;
-    }
-
     stopPeerPresenceSubscription();
-
-    const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
-      ? usersDb.firebase.database()
-      : null;
-    if (!rtdb) return;
-
-    activePeerPresenceUid = uid;
-    const ref = rtdb.ref(`presence/${uid}`);
-    const onValue = (snapshot) => {
-      presenceByUid[uid] = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || null) : null;
-      updateAssignedTechnicianLine(item, requestId);
-    };
-
-    ref.on('value', onValue, () => {
-      presenceByUid[uid] = null;
-      updateAssignedTechnicianLine(item, requestId);
-    });
-
-    unsubscribePeerPresence = () => {
-      ref.off('value', onValue);
-    };
   }
 
   function getChatPath(requestId) {

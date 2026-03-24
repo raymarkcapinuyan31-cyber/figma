@@ -36,6 +36,9 @@
   const cityTownCache = new Map();
   let onboardingLocationController = null;
   let stopDisabledStateWatcher = null;
+  let disabledStatePollTimer = null;
+  let currentDisabledStateUser = null;
+  let disabledResumeChecksBound = false;
 
   function normalizeSpaces(value) {
     return String(value || '').trim().replace(/\s+/g, ' ');
@@ -72,12 +75,64 @@
     stopDisabledStateWatcher = null;
   }
 
+  function clearDisabledStatePolling() {
+    if (!disabledStatePollTimer) return;
+    clearInterval(disabledStatePollTimer);
+    disabledStatePollTimer = null;
+  }
+
   async function forceDisabledAccountLogout() {
     rememberDisabledAccountNotice();
     if (usersDb && typeof usersDb.signOut === 'function') {
       try { await usersDb.signOut(); } catch (_) {}
     }
     window.location.href = '../../login.html';
+  }
+
+  async function isDisabledIdentity(uid, email) {
+    if (!uid || !usersDb || typeof usersDb.isAccountDisabledByIdentity !== 'function') return false;
+    try {
+      return await usersDb.isAccountDisabledByIdentity(uid, email || '');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function runDisabledStateCheckNow() {
+    const activeUser = currentDisabledStateUser || (usersDb && usersDb.auth ? usersDb.auth.currentUser : null);
+    if (!activeUser || !activeUser.uid) return;
+    if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState === 'hidden') return;
+    if (await isDisabledIdentity(activeUser.uid, activeUser.email || '')) {
+      clearDisabledStatePolling();
+      await forceDisabledAccountLogout();
+    }
+  }
+
+  function bindDisabledStateResumeChecks() {
+    if (disabledResumeChecksBound) return;
+    disabledResumeChecksBound = true;
+    window.addEventListener('focus', () => {
+      void runDisabledStateCheckNow();
+    });
+    window.addEventListener('pageshow', () => {
+      void runDisabledStateCheckNow();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      void runDisabledStateCheckNow();
+    });
+  }
+
+  function startDisabledStatePolling(uid, email) {
+    clearDisabledStatePolling();
+    const cleanUid = String(uid || '').trim();
+    if (!cleanUid) return;
+    disabledStatePollTimer = setInterval(async () => {
+      if (await isDisabledIdentity(cleanUid, email || '')) {
+        clearDisabledStatePolling();
+        await forceDisabledAccountLogout();
+      }
+    }, 4000);
   }
 
   function bindDisabledStateWatcher(uid) {
@@ -88,23 +143,34 @@
     if (!cleanUid || !rtdb) return;
 
     const refs = [
+      rtdb.ref(`accountStatus/${cleanUid}`),
       rtdb.ref(`technicians/${cleanUid}`),
       rtdb.ref(`users/${cleanUid}`),
       rtdb.ref(`customers/${cleanUid}`)
     ];
     const listeners = [];
-    const state = { technicians: null, users: null, customers: null };
+    const state = { accountStatus: null, technicians: null, users: null, customers: null };
     let handlingDisabled = false;
 
-    const evaluate = async () => {
+    const handlePermissionLoss = async (error) => {
       if (handlingDisabled) return;
-      const records = [state.technicians, state.users, state.customers].filter(Boolean);
-      if (!records.some((record) => record && record.isActive === false)) return;
+      const code = String(error && error.code ? error.code : '').toLowerCase();
+      if (!code.includes('permission-denied')) return;
       handlingDisabled = true;
       await forceDisabledAccountLogout();
     };
 
-    ['technicians', 'users', 'customers'].forEach((key, index) => {
+    const evaluate = async () => {
+      if (handlingDisabled) return;
+      const records = [state.accountStatus, state.technicians, state.users, state.customers].filter(Boolean);
+      const disabledInRecords = records.some((record) => record && record.isActive === false);
+      const disabledByIdentity = disabledInRecords ? true : await isDisabledIdentity(cleanUid, '');
+      if (!disabledInRecords && !disabledByIdentity) return;
+      handlingDisabled = true;
+      await forceDisabledAccountLogout();
+    };
+
+    ['accountStatus', 'technicians', 'users', 'customers'].forEach((key, index) => {
       const ref = refs[index];
       const listener = (snapshot) => {
         state[key] = snapshot && typeof snapshot.exists === 'function' && snapshot.exists()
@@ -113,14 +179,18 @@
         void evaluate();
       };
       listeners.push(listener);
-      ref.on('value', listener);
+      ref.on('value', listener, handlePermissionLoss);
     });
 
     stopDisabledStateWatcher = function stopWatcher() {
       refs.forEach((ref, index) => {
         const listener = listeners[index];
-        if (!ref || typeof ref.off !== 'function' || typeof listener !== 'function') return;
-        ref.off('value', listener);
+        if (!ref || typeof ref.off !== 'function') return;
+        if (typeof listener === 'function') {
+          ref.off('value', listener);
+          return;
+        }
+        ref.off('value');
       });
     };
   }
@@ -605,7 +675,7 @@
       const normalizedEmail = String((profile && profile.email) || user.email || '').trim().toLowerCase();
       const isActive = !(profile && profile.isActive === false);
 
-      if (!isActive) {
+      if (!isActive || await isDisabledIdentity(uid, normalizedEmail)) {
         await forceDisabledAccountLogout();
         return null;
       }
@@ -675,11 +745,14 @@
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
+    bindDisabledStateResumeChecks();
     const ctx = await loadContext();
     if (!ctx) return;
 
     if (ctx.mode === 'firebase' && ctx.profile && ctx.profile.uid) {
+      currentDisabledStateUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
       bindDisabledStateWatcher(ctx.profile.uid);
+      startDisabledStatePolling(ctx.profile.uid, ctx.profile.email || '');
     }
 
     if (isProfileComplete(ctx.profile)) {

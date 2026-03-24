@@ -225,11 +225,18 @@ body::after{
   transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;
 }
 
+.password-field .input{padding-right:52px}
+
 .input::placeholder{color:#93a5b5;font-weight:500}
 .input:focus{
   border-color:#4f98aa;
   box-shadow:0 0 0 4px rgba(31,142,163,.14);
   transform:translateY(-1px);
+}
+
+.input[type="password"]::-ms-reveal,
+.input[type="password"]::-ms-clear{
+  display:none;
 }
 
 .password-toggle{
@@ -269,6 +276,39 @@ body::after{
 
 .btn:hover{transform:translateY(-1px);filter:saturate(1.06)}
 .btn:disabled{cursor:wait;opacity:.82;transform:none}
+
+.auth-subtext{
+  margin:14px 0 0;
+  color:#5b7187;
+  font-size:14px;
+  line-height:1.5;
+  text-align:center;
+}
+
+.auth-actions{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.btn-secondary{
+  width:100%;
+  min-height:54px;
+  border:1px solid #c9d8e7;
+  border-radius:18px;
+  background:#fff;
+  color:#1c3954;
+  font-size:15px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-decoration:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:transform .14s ease,box-shadow .14s ease,background-color .14s ease;
+}
+
+.btn-secondary:hover{transform:translateY(-1px);background:#f7fafc}
 
 .input-error{border-color:#d9534f;box-shadow:0 0 0 4px rgba(217,83,79,.10)}
 .error-message{display:none;color:#c83d39;font-size:12px;font-weight:600;min-height:16px}

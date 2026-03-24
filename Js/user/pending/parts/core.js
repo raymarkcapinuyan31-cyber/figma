@@ -9,6 +9,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const noticeModal = document.getElementById('requestNoticeModal');
   const noticeMessage = document.getElementById('requestNoticeMessage');
   const noticeOkBtn = document.getElementById('requestNoticeOkBtn');
+  const reviewModal = document.getElementById('reviewModal');
+  const reviewForm = document.getElementById('reviewForm');
+  const reviewModalCopy = document.getElementById('reviewModalCopy');
+  const reviewStars = Array.from(document.querySelectorAll('.review-star-btn'));
+  const reviewStarsLabel = document.getElementById('reviewStarsLabel');
+  const reviewComment = document.getElementById('reviewComment');
+  const reviewMessage = document.getElementById('reviewMessage');
+  const reviewCancelBtn = document.getElementById('reviewCancelBtn');
+  const reviewSubmitBtn = document.getElementById('reviewSubmitBtn');
   const usersDb = window.usersDatabase || window.homefixDB || window.bookingDatabase || null;
   if (!requestList || !usersDb || !usersDb.auth) return;
   let activeUser = null;
@@ -19,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeMessageRequestId = '';
   let pendingCancelResolver = null;
   let pendingNoticeResolver = null;
+  let activeReviewRequestId = '';
+  let selectedReviewRating = 0;
   const technicianNameByUid = Object.create(null);
   const technicianNameByEmail = Object.create(null);
   const WAITING_TECHNICIAN_LABEL = 'WAITING FOR TECHNICIAN';
@@ -74,6 +85,52 @@ document.addEventListener('DOMContentLoaded', () => {
     return new Promise((resolve) => {
       pendingCancelResolver = resolve;
     });
+  }
+
+  function setReviewMessage(message, tone) {
+    if (!reviewMessage) return;
+    reviewMessage.textContent = String(message || '').trim();
+    reviewMessage.classList.remove('success');
+    if (tone === 'success' && reviewMessage.textContent) {
+      reviewMessage.classList.add('success');
+    }
+  }
+
+  function getReviewRatingLabel(rating) {
+    const numeric = Number(rating);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 'Select a rating.';
+    if (numeric <= 1) return 'Poor';
+    if (numeric <= 2) return 'Fair';
+    if (numeric <= 3) return 'Good';
+    if (numeric <= 4) return 'Very good';
+    return 'Excellent';
+  }
+
+  function renderReviewStars() {
+    if (!reviewStars.length) return;
+    reviewStars.forEach((button) => {
+      const value = Number(button.getAttribute('data-rating-value') || '0');
+      const active = value > 0 && value <= selectedReviewRating;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (reviewStarsLabel) {
+      reviewStarsLabel.textContent = selectedReviewRating
+        ? `${selectedReviewRating} star${selectedReviewRating === 1 ? '' : 's'} - ${getReviewRatingLabel(selectedReviewRating)}`
+        : 'Select a rating.';
+    }
+  }
+
+  function closeReviewModal() {
+    activeReviewRequestId = '';
+    selectedReviewRating = 0;
+    if (reviewModal) {
+      reviewModal.hidden = true;
+      reviewModal.setAttribute('aria-hidden', 'true');
+    }
+    if (reviewForm) reviewForm.reset();
+    setReviewMessage('');
+    renderReviewStars();
   }
 
   function formatDate(value) {
@@ -412,6 +469,107 @@ document.addEventListener('DOMContentLoaded', () => {
       || status === 'finished';
   }
 
+  function isCompletedHistoryItem(item) {
+    const status = String(item && item.status ? item.status : '').toLowerCase();
+    return status === 'completed' || status === 'finished';
+  }
+
+  function getExistingReviewRating(item) {
+    const details = getRequestDetails(item);
+    const candidates = [
+      item && item.customerRating,
+      item && item.reviewRating,
+      item && item.rating,
+      details && details.customerRating,
+      details && details.reviewRating,
+      details && details.rating
+    ];
+    for (let index = 0; index < candidates.length; index += 1) {
+      const numeric = Number(candidates[index]);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return Math.max(1, Math.min(5, Math.round(numeric)));
+      }
+    }
+    return 0;
+  }
+
+  function getExistingReviewComment(item) {
+    const details = getRequestDetails(item);
+    const candidates = [
+      item && item.reviewComment,
+      item && item.customerFeedback,
+      item && item.feedback,
+      item && item.reviewText,
+      details && details.reviewComment,
+      details && details.customerFeedback,
+      details && details.feedback,
+      details && details.reviewText
+    ];
+    for (let index = 0; index < candidates.length; index += 1) {
+      const text = String(candidates[index] || '').trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function canReviewTechnician(item) {
+    return isCompletedHistoryItem(item) && hasAssignedTechnician(item) && !getExistingReviewRating(item);
+  }
+
+  function buildReviewStarsMarkup(rating) {
+    const safeRating = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+    let stars = '';
+    for (let index = 0; index < 5; index += 1) {
+      stars += `<span class="${index < safeRating ? 'active' : ''}">★</span>`;
+    }
+    return stars;
+  }
+
+  function buildReviewSummaryMarkup(item) {
+    if (!canReviewTechnician(item)) return '';
+    const rating = getExistingReviewRating(item);
+    if (!rating) return '';
+    const comment = getExistingReviewComment(item);
+    return `
+      <div class="request-review-summary">
+        <div class="request-review-head">
+          <strong>Your rating for ${escapeHtml(getTechnicianName(item))}</strong>
+          <span class="request-review-score">${escapeHtml(String(rating.toFixed(1)))} / 5</span>
+        </div>
+        <div class="request-review-stars" aria-label="${escapeHtml(String(rating))} out of 5 stars">${buildReviewStarsMarkup(rating)}</div>
+        ${comment ? `<p class="request-review-text">${escapeHtml(comment)}</p>` : ''}
+      </div>
+    `;
+  }
+
+  function findActiveRequestById(requestId) {
+    const id = String(requestId || '').trim();
+    if (!id) return null;
+    return (Array.isArray(activeItems) ? activeItems : []).find((item) => String(item && item.id ? item.id : '').trim() === id) || null;
+  }
+
+  function openReviewModal(item) {
+    if (!reviewModal || !reviewForm || !reviewSubmitBtn) return;
+    const requestId = String(item && item.id ? item.id : '').trim();
+    if (!requestId) return;
+
+    activeReviewRequestId = requestId;
+    selectedReviewRating = getExistingReviewRating(item);
+    if (reviewComment) {
+      reviewComment.value = getExistingReviewComment(item);
+    }
+    if (reviewModalCopy) {
+      reviewModalCopy.textContent = `Share your experience with ${getTechnicianName(item)} for ${getRequestTitle(item)}.`;
+    }
+    reviewSubmitBtn.textContent = selectedReviewRating ? 'Update Rating' : 'Submit Rating';
+    setReviewMessage('');
+    renderReviewStars();
+    reviewModal.hidden = false;
+    reviewModal.setAttribute('aria-hidden', 'false');
+    const focusTarget = reviewStars.find((button) => Number(button.getAttribute('data-rating-value') || '0') === Math.max(selectedReviewRating, 1));
+    if (focusTarget) focusTarget.focus();
+  }
+
   function hasAssignedTechnician(item) {
     const uid = String(item && (item.assignedTechnicianId || item.technicianId || item.assignedToUid || item.assignedTo) || '').trim();
     const email = String(item && (item.assignedTechnicianEmail || item.technicianEmail || item.assignedToEmail) || '').trim();
@@ -502,11 +660,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const type = normalizeBookingType(item);
       const selectedOption = getSelectedOption(item);
       const canChat = canChatWithTechnician(item);
+      const canReview = canReviewTechnician(item);
       const requestId = String(item && item.id ? item.id : '').trim();
+      const reviewSummaryMarkup = buildReviewSummaryMarkup(item);
       const actionButtons = [];
 
       if (canChat && requestId) {
         actionButtons.push(`<a class="chat-link-btn" href="messages.html?requestId=${encodeURIComponent(requestId)}">Chat with Technician</a>`);
+      }
+      if (canReview && requestId) {
+        actionButtons.push(`<button type="button" class="rate-btn" data-request-id="${escapeHtml(requestId)}">RATE TECHNICIAN</button>`);
       }
       if (allowCancel) {
         actionButtons.push(`<button type="button" class="cancel-btn" data-request-id="${escapeHtml(requestId)}" ${canCancel ? '' : 'disabled'}>${canCancel ? 'CANCEL' : 'CANCELLED'}</button>`);
@@ -529,6 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>Address: ${escapeHtml(renderAddressValue(item.location))}</span>
             <span>Additional Details: ${escapeHtml(item.location && item.location.additionalDetails ? item.location.additionalDetails : 'N/A')}</span>
             ${showStatus ? `<span>Status: <span class="request-status ${escapeHtml(statusClassName(status))}">${escapeHtml(status)}</span></span>` : ''}
+            ${reviewSummaryMarkup}
             ${mediaHtml}
           </div>
           ${actionButtons.length ? `<div class="request-actions">${actionButtons.join('')}</div>` : ''}
@@ -847,9 +1011,75 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  reviewStars.forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedReviewRating = Number(button.getAttribute('data-rating-value') || '0');
+      renderReviewStars();
+      setReviewMessage('');
+    });
+  });
+
+  if (reviewCancelBtn) {
+    reviewCancelBtn.addEventListener('click', () => {
+      closeReviewModal();
+    });
+  }
+
+  if (reviewModal) {
+    reviewModal.addEventListener('click', (event) => {
+      if (event.target === reviewModal) {
+        closeReviewModal();
+      }
+    });
+  }
+
+  if (reviewForm) {
+    reviewForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!activeUser || !activeReviewRequestId || !(usersDb && typeof usersDb.saveBookingRequestReview === 'function')) return;
+      if (!selectedReviewRating) {
+        setReviewMessage('Please choose a star rating first.');
+        return;
+      }
+
+      const originalLabel = reviewSubmitBtn ? reviewSubmitBtn.textContent : 'Submit Rating';
+      if (reviewSubmitBtn) {
+        reviewSubmitBtn.disabled = true;
+        reviewSubmitBtn.textContent = 'Saving...';
+      }
+      setReviewMessage('');
+
+      try {
+        const ok = await usersDb.saveBookingRequestReview(activeReviewRequestId, activeUser.uid, {
+          rating: selectedReviewRating,
+          comment: reviewComment ? reviewComment.value : ''
+        });
+        if (!ok) {
+          setReviewMessage('Unable to save your rating for this request.');
+          return;
+        }
+
+        closeReviewModal();
+        await showNotice('Technician rating saved successfully.');
+        await refreshList();
+      } catch (err) {
+        setReviewMessage(err && err.message ? err.message : 'Failed to save your rating.');
+      } finally {
+        if (reviewSubmitBtn) {
+          reviewSubmitBtn.disabled = false;
+          reviewSubmitBtn.textContent = originalLabel;
+        }
+      }
+    });
+  }
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && cancelModal && !cancelModal.hidden) {
       closeCancelModal(false);
+      return;
+    }
+    if (event.key === 'Escape' && reviewModal && !reviewModal.hidden) {
+      closeReviewModal();
       return;
     }
     if (event.key === 'Escape' && noticeModal && !noticeModal.hidden) {
@@ -858,13 +1088,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   requestList.addEventListener('click', async (event) => {
-    const target = event.target;
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
     if (!(target instanceof HTMLButtonElement)) return;
-    if (!target.classList.contains('cancel-btn')) return;
     if (!activeUser) return;
 
     const requestId = target.getAttribute('data-request-id');
     if (!requestId) return;
+
+    if (target.classList.contains('rate-btn')) {
+      const item = findActiveRequestById(requestId);
+      if (!item || !canReviewTechnician(item)) return;
+      openReviewModal(item);
+      return;
+    }
+
+    if (!target.classList.contains('cancel-btn')) return;
 
     const confirmed = await askCancelConfirmation();
     if (!confirmed) return;

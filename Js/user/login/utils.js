@@ -69,6 +69,7 @@
       btn.setAttribute('aria-pressed', input.type === 'text' ? 'true' : 'false');
       btn.setAttribute('aria-label', input.type === 'password' ? 'Show password' : 'Hide password');
       img.alt = input.type === 'password' ? 'Show password' : 'Hide password';
+      img.src = input.type === 'password' ? 'images/icons/eye-closed.svg' : 'images/icons/eye-open.svg';
 
       btn.addEventListener('click', () => {
         const isHidden = input.type === 'password';

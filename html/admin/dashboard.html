@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>Admin Dashboard - HomeFixSolution</title>
-	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260319d">
+	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260323a">
 </head>
 <body>
 	<div class="app-shell">
@@ -16,7 +16,6 @@
 				</div>
 				<div class="app-title-wrap">
 					<div class="app-title">Admin Dashboard</div>
-					<div class="app-subtitle">Operations and account control center</div>
 				</div>
 			</div>
 			<div class="topbar-right">
@@ -31,14 +30,7 @@
 					<p class="nav-section-title">Overview</p>
 					<button class="nav-link active" type="button" data-section="overview">Overview</button>
 					<p class="nav-section-title">Requests</p>
-					<details class="nav-group" id="manageRequestsGroup">
-						<summary class="nav-link manage-summary" id="manageRequestsSummary">Requests <span class="nav-caret">▼</span></summary>
-						<div class="nav-submenu">
-							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="waiting">Waiting</button>
-							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="accepted">Active</button>
-							<button class="nav-sub-link" type="button" data-section="requests" data-request-filter="cancelled">Cancelled</button>
-						</div>
-					</details>
+					<button class="nav-link" type="button" data-section="requests">Requests</button>
 					<p class="nav-section-title">Accounts</p>
 					<details class="nav-group" id="manageAccountsGroup">
 						<summary class="nav-link manage-summary" id="manageAccountsSummary">Accounts <span class="nav-caret">▼</span></summary>
@@ -50,8 +42,16 @@
 					</details>
 					<p class="nav-section-title nav-section-title-spaced">Monitoring</p>
 					<button class="nav-link" type="button" data-section="backup">Backup Files</button>
-					<button class="nav-link" type="button" data-section="reports">Reports</button>
+					<button class="nav-link" type="button" data-section="reports">Reports and Concerns</button>
 					<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
+					<p class="nav-section-title nav-section-title-spaced">Account</p>
+					<details class="nav-group" id="manageAdminGroup">
+						<summary class="nav-link manage-summary" id="manageAdminSummary">Admin Settings <span class="nav-caret">▼</span></summary>
+						<div class="nav-submenu">
+							<button class="nav-sub-link" type="button" data-section="admin-profile">Admin Profile</button>
+							<button class="nav-sub-link" type="button" data-section="admin-password">Password</button>
+						</div>
+					</details>
 				</div>
 				<a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
 			</aside>
@@ -67,11 +67,11 @@
 							<h3>Technician Accounts</h3>
 							<p id="ovTechnicianAccounts">0</p>
 						</button>
-						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="waiting" aria-label="Open pending requests">
+						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="pending" aria-label="Open pending requests">
 							<h3>Pending Requests</h3>
 							<p id="ovPendingRequests">0</p>
 						</button>
-						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="accepted" aria-label="Open in progress requests">
+						<button class="stat-card stat-card-action" type="button" data-section="requests" data-request-filter="active" aria-label="Open in progress requests">
 							<h3>In Progress Requests</h3>
 							<p id="ovInProgressRequests">0</p>
 						</button>
@@ -88,13 +88,15 @@
 							<thead>
 								<tr>
 									<th>Request ID</th>
-									<th>Status</th>
+									<th>Customer</th>
 									<th>Technician</th>
+									<th>Tech ID</th>
+									<th>Status</th>
 									<th>Updated</th>
 								</tr>
 							</thead>
 							<tbody id="overviewRequestsTableBody">
-								<tr><td colspan="4">Loading overview...</td></tr>
+								<tr><td colspan="6">Loading overview...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -176,15 +178,9 @@
 							<input type="text" id="techMobile" placeholder="09XXXXXXXXX or +639XXXXXXXXX" required>
 						</label>
 						<label>
-							Province
-							<select id="techProvince" required>
-								<option value="">Select province</option>
-							</select>
-						</label>
-						<label>
-							City / Municipality
-							<select id="techCity" required>
-								<option value="">Select city/municipality</option>
+							Barangay
+							<select id="techBarangay" required>
+								<option value="">Select barangay</option>
 							</select>
 						</label>
 						<div class="full tech-create-skills-wrap">
@@ -207,10 +203,22 @@
 
 				<section class="panel" id="requests" data-panel="requests" hidden>
 					<div class="panel-head">
-						<h1 class="panel-title"><span id="requestsPanelTitleLabel">WAITING</span> REQUESTS</h1>
-						<button type="button" class="btn-secondary icon-refresh-btn" id="refreshRequestsBtn" aria-label="Refresh requests" title="Refresh requests">
-							<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
-						</button>
+						<h1 class="panel-title"><span id="requestsPanelTitleLabel">PENDING</span> REQUESTS</h1>
+						<div class="panel-controls">
+							<select id="requestStatusFilter" class="filter-select" aria-label="Filter requests by status">
+								<option value="pending" selected>Pending</option>
+								<option value="active">Active</option>
+								<option value="cancelled">Cancelled</option>
+								<option value="done">Done</option>
+							</select>
+							<select id="requestDoneLateFilter" class="filter-select" aria-label="Filter done requests" hidden>
+								<option value="all">All done</option>
+								<option value="late">Late only</option>
+							</select>
+							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshRequestsBtn" aria-label="Refresh requests" title="Refresh requests">
+								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
+							</button>
+						</div>
 					</div>
 
 					<div class="table-wrap">
@@ -221,15 +229,16 @@
 									<th>Session Log ID</th>
 									<th>Customer</th>
 									<th>Customer ID</th>
-									<th>Status</th>
-									<th>Technician</th>
 									<th>Service</th>
 									<th>Schedule</th>
+									<th>Technician</th>
+									<th>Tech ID</th>
+									<th>Status</th>
 									<th>Actions</th>
 								</tr>
 							</thead>
 							<tbody id="requestsTableBody">
-								<tr><td colspan="9">Loading requests...</td></tr>
+								<tr><td colspan="10">Loading requests...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -265,11 +274,12 @@
 									<th>Date</th>
 									<th>Time</th>
 									<th>Session Code</th>
+									<th id="sessionUserNameHeader">Name</th>
 									<th id="sessionUserIdHeader">Customer Code</th>
 								</tr>
 							</thead>
 							<tbody id="sessionLogsTableBody">
-								<tr><td colspan="4">Loading session logs...</td></tr>
+								<tr><td colspan="5">Loading session logs...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -282,9 +292,14 @@
 
 				<section class="panel" id="reports" data-panel="reports" hidden>
 					<div class="panel-head">
-						<h1 class="panel-title">TECHNICIAN REPORTS</h1>
+						<h1 class="panel-title">REPORTS AND CONCERNS</h1>
 						<div class="panel-controls">
-							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshReportsBtn" aria-label="Refresh reports" title="Refresh reports">
+							<select id="reportsTypeFilter" class="filter-select" aria-label="Filter reports and concerns by type">
+								<option value="all">All</option>
+								<option value="technician">Technician reports</option>
+								<option value="concern">Customer concerns</option>
+							</select>
+							<button type="button" class="btn-secondary icon-refresh-btn" id="refreshReportsBtn" aria-label="Refresh reports and concerns" title="Refresh reports and concerns">
 								<img src="../../images/icons/refresh-icon.svg" alt="" aria-hidden="true">
 							</button>
 						</div>
@@ -294,6 +309,7 @@
 							<thead>
 								<tr>
 									<th>Time</th>
+									<th>Type</th>
 									<th>Request ID</th>
 									<th>Customer</th>
 									<th>Technician ID</th>
@@ -302,7 +318,7 @@
 								</tr>
 							</thead>
 							<tbody id="reportsTableBody">
-								<tr><td colspan="6">Loading reports...</td></tr>
+								<tr><td colspan="7">Loading reports and concerns...</td></tr>
 							</tbody>
 						</table>
 					</div>
@@ -310,6 +326,86 @@
 						<button type="button" class="btn-secondary" id="reportsPrevPageBtn">Previous</button>
 						<span id="reportsPageIndicator">Page 1 of 1</span>
 						<button type="button" class="btn-secondary" id="reportsNextPageBtn">Next</button>
+					</div>
+				</section>
+
+				<section class="panel" id="admin-profile" data-panel="admin-profile" hidden>
+					<div class="panel-head">
+						<div>
+							<h1 class="panel-title">ADMIN PROFILE</h1>
+						</div>
+					</div>
+
+					<div class="settings-grid">
+						<article class="settings-card">
+							<div class="settings-card-head">
+								<h2>Profile Details</h2>
+							</div>
+							<form id="adminProfileForm" class="settings-form" novalidate>
+								<label class="full">
+									Account Email
+									<input type="email" id="adminSettingsEmail" autocomplete="email" required>
+								</label>
+								<div class="settings-inline-actions full">
+									<button type="button" class="btn-secondary" id="sendAdminVerificationBtn">Send Verification</button>
+								</div>
+								<p class="settings-note full" id="adminEmailVerificationStatus" role="status" aria-live="polite"></p>
+								<label>
+									First Name
+									<input type="text" id="adminFirstName" minlength="2" maxlength="15" required>
+								</label>
+								<label>
+									Last Name
+									<input type="text" id="adminLastName" minlength="2" maxlength="15" required>
+								</label>
+								<div class="settings-actions">
+									<button type="button" class="btn-secondary" id="editAdminProfileBtn">Edit Profile</button>
+									<button type="submit" class="btn-primary" id="saveAdminProfileBtn">Save Profile</button>
+								</div>
+								<p class="form-message" id="adminProfileMessage" role="status" aria-live="polite"></p>
+							</form>
+						</article>
+					</div>
+				</section>
+
+				<section class="panel" id="admin-password" data-panel="admin-password" hidden>
+					<div class="panel-head">
+						<div>
+							<h1 class="panel-title">ADMIN PASSWORD</h1>
+						</div>
+					</div>
+
+					<div class="settings-grid">
+						<article class="settings-card">
+							<div class="settings-card-head">
+								<h2>Password</h2>
+							</div>
+							<form id="adminPasswordForm" class="settings-form" novalidate>
+								<label>
+									New Password
+									<div class="password-input-wrap">
+										<input type="password" id="adminNewPassword" minlength="8" maxlength="24" autocomplete="new-password" required>
+										<button type="button" class="password-toggle" data-target="#adminNewPassword" aria-label="Show password" aria-pressed="false">
+											<img src="../../images/icons/eye-closed.svg" alt="Show password">
+										</button>
+									</div>
+								</label>
+								<label>
+									Confirm Password
+									<div class="password-input-wrap">
+										<input type="password" id="adminConfirmPassword" minlength="8" maxlength="24" autocomplete="new-password" required>
+										<button type="button" class="password-toggle" data-target="#adminConfirmPassword" aria-label="Show password" aria-pressed="false">
+											<img src="../../images/icons/eye-closed.svg" alt="Show password">
+										</button>
+									</div>
+								</label>
+								<p class="settings-note full">Use 8 to 24 characters with uppercase, lowercase, and a number.</p>
+								<div class="settings-actions">
+									<button type="submit" class="btn-primary" id="saveAdminPasswordBtn">Update Password</button>
+								</div>
+								<p class="form-message" id="adminPasswordMessage" role="status" aria-live="polite"></p>
+							</form>
+						</article>
 					</div>
 				</section>
 
@@ -329,7 +425,7 @@
 							<div class="backup-meta-list">
 								<span>Accounts: <strong id="backupAccountsCount">0</strong></span>
 								<span>Requests: <strong id="backupRequestsCount">0</strong></span>
-								<span>Reports: <strong id="backupReportsCount">0</strong></span>
+								<span>Reports and Concerns: <strong id="backupReportsCount">0</strong></span>
 								<span>Session Logs: <strong id="backupSessionLogsCount">0</strong></span>
 							</div>
 							<button type="button" class="btn-primary" id="downloadFullBackupBtn">Download Full Backup</button>
@@ -348,9 +444,9 @@
 						</article>
 
 						<article class="backup-card">
-							<h2>Reports Backup</h2>
-							<p>Technician report records.</p>
-							<button type="button" class="btn-secondary" id="downloadReportsBackupBtn">Download Reports JSON</button>
+							<h2>Reports and Concerns Backup</h2>
+							<p>Technician report and customer concern records.</p>
+							<button type="button" class="btn-secondary" id="downloadReportsBackupBtn">Download Reports and Concerns JSON</button>
 						</article>
 
 						<article class="backup-card">
@@ -359,7 +455,6 @@
 							<button type="button" class="btn-secondary" id="downloadSessionLogsBackupBtn">Download Session Logs JSON</button>
 						</article>
 					</div>
-
 					<p class="backup-status" id="backupStatusMessage" role="status" aria-live="polite">Ready to create a backup file.</p>
 				</section>
 			</main>
@@ -418,9 +513,9 @@
 	<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 	<script src="../../firebase/config/firebase-config.js"></script>
 	<script src="../../databasehfs/users/core.js?v=20260312a"></script>
-	<script src="../../databasehfs/users/user-profile-database.js?v=20260319c"></script>
+	<script src="../../databasehfs/users/user-profile-database.js?v=20260323g"></script>
 	<script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
-	<script src="../../databasehfs/users/user-database.js"></script>
-	<script src="../../Js/admin/dashboard.js?v=20260319d"></script>
+	<script src="../../databasehfs/users/user-database.js?v=20260323g"></script>
+	<script src="../../Js/admin/dashboard.js?v=20260323g"></script>
 </body>
 </html>

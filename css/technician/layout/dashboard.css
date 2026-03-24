@@ -1,11 +1,12 @@
 :root{--bg:#edf3fb;--panel:#fff;--text:#223142}
 *{box-sizing:border-box;font-family:'Segoe UI', Roboto, Arial, sans-serif}
 html,body{height:100%;margin:0}
-body{background:radial-gradient(1300px 680px at 10% -20%,#dce9ff 0%,#edf3fb 48%,#f5f8fd 100%);overflow:hidden}
+body{background:#f4f7fb;overflow:hidden}
 
 .app-shell{min-height:100vh;display:flex;flex-direction:column}
-.topbar{height:76px;background:rgba(255,255,255,0.96);backdrop-filter:blur(6px);border-bottom:1px solid #dbe5f2;display:flex;align-items:center;justify-content:space-between;padding:0 14px;box-shadow:0 6px 20px rgba(24,45,78,0.08);position:relative;z-index:40;overflow:visible}
+.topbar{height:76px;background:#ffffff;border-bottom:1px solid #dbe5f2;display:flex;align-items:center;justify-content:space-between;padding:0 14px;box-shadow:0 4px 12px rgba(24,45,78,0.06);position:relative;z-index:40;overflow:visible}
 .topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto}
 .sidebar-toggle{height:36px;min-width:36px;border:1px solid #d7d7d7;background:#fff;border-radius:8px;cursor:pointer;font-size:18px;line-height:1}
 .logo-wrapper{position:relative;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .logo-wrapper::after{content:"";position:absolute;inset:0;border-radius:50%;z-index:0;border:3px solid #2b6b9a;background:transparent}
@@ -13,6 +14,30 @@ body{background:radial-gradient(1300px 680px at 10% -20%,#dce9ff 0%,#edf3fb 48%,
 .top-logo{width:38px;height:38px;object-fit:contain;display:block;position:relative;z-index:3;border-radius:50%;background:transparent}
 
 .user-menu-wrap{position:relative;z-index:45}
+.tech-topbar-notification-wrap{position:relative;display:flex;align-items:center}
+.tech-topbar-notification{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:999px;background:transparent;box-shadow:none;padding:0;cursor:pointer;transition:background .18s ease,transform .18s ease,opacity .18s ease}
+.tech-topbar-notification:hover{background:rgba(23,101,193,.08);transform:translateY(-1px)}
+.tech-topbar-notification:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(44,109,182,.12);background:rgba(23,101,193,.08)}
+.tech-topbar-notification-icon{width:24px;height:24px;display:block;opacity:.8}
+.tech-topbar-notification-dot{position:absolute;top:4px;right:3px;width:9px;height:9px;border-radius:999px;background:#e11d48;box-shadow:0 0 0 2px rgba(255,255,255,.96)}
+.tech-topbar-notification-panel{position:absolute;top:calc(100% + 10px);right:0;width:290px;padding:14px 14px 12px;background:#ffffff;border:1px solid #d8e3ef;border-radius:16px;box-shadow:0 12px 24px rgba(18,61,115,.12);display:none;z-index:80}
+.tech-topbar-notification-panel.open{display:block}
+.tech-topbar-notification-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px}
+.tech-topbar-notification-title{font-size:14px;font-weight:800;color:#17314d;margin:0}
+.tech-topbar-notification-clear{border:none;background:transparent;color:#1765c1;font-size:12px;font-weight:700;padding:0;cursor:pointer}
+.tech-topbar-notification-clear:hover{text-decoration:underline}
+.tech-topbar-notification-list{display:flex;flex-direction:column;gap:10px}
+.tech-topbar-notification-item{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid #eef3f8;cursor:pointer;border-radius:10px;transition:background .18s ease}
+.tech-topbar-notification-item:hover{background:#f6faff}
+.tech-topbar-notification-item:focus-visible{outline:none;box-shadow:0 0 0 2px rgba(23,101,193,.16);background:#f6faff}
+.tech-topbar-notification-item:last-child{border-bottom:none;padding-bottom:0}
+.tech-topbar-notification-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.tech-topbar-notification-item strong{font-size:13px;color:#17314d}
+.tech-topbar-notification-item span{font-size:12px;line-height:1.45;color:#5e7287}
+.tech-topbar-notification-item time{font-size:11px;color:#8193a6}
+.tech-topbar-notification-remove{border:none;background:transparent;color:#8ea0b3;font-size:18px;line-height:1;padding:0;cursor:pointer;position:relative;z-index:1}
+.tech-topbar-notification-remove:hover{color:#516579}
+.tech-topbar-notification-empty{margin:0;color:#5e7287;font-size:13px;line-height:1.5}
 .user-menu-btn{border:none;background:transparent;color:#7a6e6f;font-size:15px;display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;border-radius:8px}
 .user-menu-btn:hover{background:#f5f5f5}
 .user-menu{position:absolute;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);min-width:140px;display:none;z-index:60}
@@ -37,7 +62,7 @@ body{background:radial-gradient(1300px 680px at 10% -20%,#dce9ff 0%,#edf3fb 48%,
 .nav-logout:hover{background:#d32f2f;color:#fff;border-color:#d32f2f}
 
 .content{flex:1;padding:18px;display:flex;justify-content:center;align-items:flex-start;overflow-y:auto;max-height:calc(100vh - 76px)}
-.panel{background:rgba(255,255,255,0.98);border:1px solid #dbe6f5;width:100%;max-width:1100px;min-height:420px;padding:22px;border-radius:16px;box-shadow:0 14px 34px rgba(22,46,86,0.12)}
+.panel{background:#ffffff;border:1px solid #dbe6f5;width:100%;max-width:1100px;min-height:420px;padding:22px;border-radius:16px;box-shadow:0 10px 24px rgba(22,46,86,0.08)}
 .panel-title{margin:0 0 20px;font-size:28px;letter-spacing:0.5px;color:#1c2d37;text-align:center}
 
 .app-shell.sidebar-collapsed .sidebar{width:0;min-width:0;padding-left:0;padding-right:0;border-right:none}

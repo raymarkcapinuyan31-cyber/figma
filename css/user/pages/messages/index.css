@@ -1,6 +1,11 @@
 .messages-card{
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
   align-items:center;
   padding:28px;
+  overflow:hidden;
   font-family:"Plus Jakarta Sans","Segoe UI",Tahoma,sans-serif;
   background:
     radial-gradient(820px 260px at 96% -8%, rgba(96, 171, 255, 0.24) 0%, rgba(96, 171, 255, 0) 60%),
@@ -8,22 +13,22 @@
     linear-gradient(180deg, #eef5ff 0%, #f6f8fc 40%, #f5f7fb 100%);
 }
 
-.messages-hero{width:100%;max-width:980px;margin:0 0 14px}
+.messages-hero{width:100%;max-width:980px;margin:0 0 14px;flex:0 0 auto}
 .messages-kicker{margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;color:#0f5cad}
 .messages-hero h1{margin:0;font-size:44px;line-height:1.02;color:#071d33}
 .messages-hero p{margin:12px 0 0;max-width:760px;font-size:15px;line-height:1.55;color:#425b74}
 
-.messages-shell{width:100%;max-width:980px;display:grid;grid-template-columns:300px 1fr;gap:12px}
-.messages-threads{border:1px solid #ccdced;border-radius:14px;background:#fbfdff;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:440px;max-height:560px;overflow:auto;box-shadow:0 8px 22px rgba(22,64,116,0.08)}
+.messages-shell{width:100%;max-width:980px;display:grid;grid-template-columns:300px 1fr;gap:12px;flex:1 1 auto;min-height:0;overflow:hidden}
+.messages-threads{border:1px solid #ccdced;border-radius:14px;background:#fbfdff;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;max-height:none;overflow-y:auto;overflow-x:hidden;box-shadow:0 8px 22px rgba(22,64,116,0.08)}
 .messages-thread-btn{width:100%;text-align:left;border:1px solid #d4e2f2;border-radius:11px;background:#fff;padding:10px 11px;display:grid;gap:3px;cursor:pointer;transition:all .2s ease}
 .messages-thread-btn:hover{transform:translateY(-1px);border-color:#9dbddd;background:#f5faff}
 .messages-thread-btn strong{font-size:13px;color:#15355a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .messages-thread-btn span{font-size:11px;color:#4a6280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .messages-thread-btn.active{border-color:#1a63bd;background:#eaf3ff;box-shadow:0 6px 14px rgba(22,99,189,.2)}
 
-.messages-main{border:1px solid #ccdced;border-radius:14px;background:#fff;min-height:440px;display:flex;box-shadow:0 12px 28px rgba(18,61,115,.1)}
+.messages-main{border:1px solid #ccdced;border-radius:14px;background:#fff;min-height:0;display:flex;overflow:hidden;box-shadow:0 12px 28px rgba(18,61,115,.1)}
 .messages-main-empty{margin:auto;padding:14px;text-align:center;color:#5a6c80;font-size:13px}
-.messages-conversation{width:100%;display:grid;grid-template-rows:auto auto 1fr auto auto}
+.messages-conversation{width:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto auto;min-height:0}
 .messages-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid #e4edf7}
 .messages-head strong{font-size:14px;color:#163355}
 .messages-head span{font-size:11px;color:#577191}
@@ -35,7 +40,7 @@
 .messages-report-btn:focus-visible{outline:2px solid rgba(226,15,39,.35);outline-offset:2px;border-radius:4px}
 .messages-report-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
 .messages-assigned-tech{margin:10px 12px 0;padding:8px 11px;border:1px solid #d2e1f2;border-radius:10px;background:linear-gradient(180deg,#f8fbff 0%,#edf5ff 100%);color:#183b61;font-size:12px;font-weight:700}
-.messages-list{padding:10px;display:flex;flex-direction:column;gap:8px;overflow:auto;min-height:180px}
+.messages-list{padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overflow-x:hidden;min-height:0}
 .messages-empty{border:1px dashed #ced9e5;border-radius:10px;padding:14px;color:#5a6c80;font-size:13px;text-align:center;background:#fbfdff}
 .messages-item{max-width:88%;padding:8px 10px;border:1px solid #d6e3f2;border-radius:11px;background:#f7fbff;color:#2f4a67;font-size:12px;line-height:1.4}
 .messages-item.mine{margin-left:auto;background:#e8f2ff;border-color:#bfd8f8;color:#123f6a}
@@ -88,9 +93,9 @@
 
 @media(max-width:760px){
   .messages-shell{grid-template-columns:1fr}
-  .messages-threads{min-height:unset;max-height:220px}
-  .messages-main{min-height:340px}
-  .messages-list{min-height:220px}
+  .messages-threads{min-height:180px;max-height:220px}
+  .messages-main{min-height:0}
+  .messages-list{min-height:160px}
   .messages-hero h1{font-size:30px}
   .messages-hero p{font-size:14px}
 }

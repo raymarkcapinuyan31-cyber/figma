@@ -325,6 +325,88 @@
     return Date.now();
   }
 
+  function getRequestTechnicianIdentity(request) {
+    const item = request && typeof request === 'object' ? request : {};
+    const details = item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+
+    return {
+      technicianId: String(item.assignedTechnicianId || item.technicianId || details.selectedTechnicianId || '').trim(),
+      technicianEmail: String(item.assignedTechnicianEmail || item.technicianEmail || details.selectedTechnicianEmail || '').trim().toLowerCase()
+    };
+  }
+
+  function isCompletedRequestStatus(value) {
+    const status = String(value || '').trim().toLowerCase();
+    return status === 'completed' || status === 'finished';
+  }
+
+  function normalizeReviewRating(value) {
+    const rating = Number(value);
+    if (!Number.isFinite(rating)) {
+      const err = new Error('A valid rating is required.');
+      err.code = 'validation/invalid-rating';
+      throw err;
+    }
+
+    const normalized = Math.round(rating);
+    if (normalized < 1 || normalized > 5) {
+      const err = new Error('Rating must be between 1 and 5 stars.');
+      err.code = 'validation/invalid-rating-range';
+      throw err;
+    }
+
+    return normalized;
+  }
+
+  function normalizeReviewComment(value) {
+    const comment = normalizeFreeText(value);
+    if (comment.length > 500) {
+      const err = new Error('Feedback must be 500 characters or less.');
+      err.code = 'validation/review-too-long';
+      throw err;
+    }
+    return comment;
+  }
+
+  function hasExistingCustomerReview(request) {
+    const item = request && typeof request === 'object' ? request : {};
+    const details = item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+
+    if (item.hasCustomerReview === true || details.hasCustomerReview === true) return true;
+    if (normalizeFreeText(item.reviewSubmittedAt || item.customerReviewedAt || item.ratingUpdatedAt)) return true;
+
+    const ratingCandidates = [
+      item.customerRating,
+      item.reviewRating,
+      item.rating,
+      details.customerRating,
+      details.reviewRating,
+      details.rating
+    ];
+
+    for (let index = 0; index < ratingCandidates.length; index += 1) {
+      const numeric = Number(ratingCandidates[index]);
+      if (Number.isFinite(numeric) && numeric > 0) return true;
+    }
+
+    const commentCandidates = [
+      item.reviewComment,
+      item.customerFeedback,
+      item.feedback,
+      item.reviewText,
+      details.reviewComment,
+      details.customerFeedback,
+      details.feedback,
+      details.reviewText
+    ];
+
+    return commentCandidates.some((entry) => normalizeFreeText(entry));
+  }
+
   function mapRealtimeSnapshotItems(snapshot) {
     const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
     const items = Object.keys(value).map((id) => {
@@ -988,6 +1070,90 @@
       requests[index] = Object.assign({}, requests[index], { status: 'cancelled', cancelledAt: core.nowIso() });
       core.writeJson(core.STORAGE_KEYS.requests, requests);
       await syncScheduleLockForRequest(String(requestId || '').trim(), 'cancelled', requests[index], 'local');
+      return true;
+    },
+
+    async saveBookingRequestReview(requestId, customerId, reviewData) {
+      const id = String(requestId || '').trim();
+      const uid = String(customerId || '').trim();
+      const payload = reviewData && typeof reviewData === 'object' ? reviewData : {};
+      if (!id || !uid) return false;
+
+      const rating = normalizeReviewRating(payload.rating);
+      const comment = normalizeReviewComment(payload.comment);
+
+      if (core.mode === 'firebase') {
+        const db = getRealtimeDb();
+        const ref = db.ref(`requests/${id}`);
+        const snapshot = await ref.once('value');
+        if (!snapshot.exists()) return false;
+
+        const existing = snapshot.val() || {};
+        if (String(existing.customerId || '').trim() !== uid) return false;
+        if (!isCompletedRequestStatus(existing.status)) return false;
+        if (hasExistingCustomerReview(existing)) {
+          const err = new Error('This request has already been rated and can no longer be edited.');
+          err.code = 'review/already-submitted';
+          throw err;
+        }
+
+        const technicianIdentity = getRequestTechnicianIdentity(existing);
+        if (!technicianIdentity.technicianId && !technicianIdentity.technicianEmail) return false;
+
+        const timestamp = getServerTimestamp();
+        const updates = {
+          customerRating: rating,
+          reviewRating: rating,
+          rating,
+          reviewComment: comment,
+          customerFeedback: comment,
+          feedback: comment,
+          reviewText: comment,
+          hasCustomerReview: true,
+          reviewedByRole: 'customer',
+          reviewSubmittedAt: timestamp,
+          customerReviewedAt: timestamp,
+          ratingUpdatedAt: timestamp,
+          updatedAt: timestamp
+        };
+
+        await ref.update(updates);
+        return true;
+      }
+
+      if (core.forceFirebaseOnly) throw core.buildFirebaseRequiredError();
+
+      const requests = core.readJson(core.STORAGE_KEYS.requests, []);
+      const index = requests.findIndex((item) => String(item && item.id || '') === id);
+      if (index < 0) return false;
+      const existing = requests[index] || {};
+      if (String(existing.customerId || '').trim() !== uid) return false;
+      if (!isCompletedRequestStatus(existing.status)) return false;
+      if (hasExistingCustomerReview(existing)) {
+        const err = new Error('This request has already been rated and can no longer be edited.');
+        err.code = 'review/already-submitted';
+        throw err;
+      }
+
+      const technicianIdentity = getRequestTechnicianIdentity(existing);
+      if (!technicianIdentity.technicianId && !technicianIdentity.technicianEmail) return false;
+
+      requests[index] = Object.assign({}, existing, {
+        customerRating: rating,
+        reviewRating: rating,
+        rating,
+        reviewComment: comment,
+        customerFeedback: comment,
+        feedback: comment,
+        reviewText: comment,
+        hasCustomerReview: true,
+        reviewedByRole: 'customer',
+        reviewSubmittedAt: core.nowIso(),
+        customerReviewedAt: core.nowIso(),
+        ratingUpdatedAt: core.nowIso(),
+        updatedAt: core.nowIso()
+      });
+      core.writeJson(core.STORAGE_KEYS.requests, requests);
       return true;
     },
 

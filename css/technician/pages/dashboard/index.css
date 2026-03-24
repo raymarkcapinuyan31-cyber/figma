@@ -1,12 +1,58 @@
-.request-card-list{max-width:520px;margin:0 auto;background:#fff;border:1px solid #dfe2e6;border-radius:10px;padding:14px 12px;display:flex;flex-direction:column;gap:10px}
+.request-card-list{max-width:600px;margin:0 auto;background:#fff;border:1px solid #dfe2e6;border-radius:10px;padding:14px 12px;display:flex;flex-direction:column;gap:10px}
 .request-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 14px;border:1px solid #cfd5db;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.08)}
 .request-name{font-size:14px;color:#2d2d2d}
+.panel[hidden]{display:none !important}
+.panel#accepted-request{display:flex;flex-direction:column;max-height:calc(100vh - 112px);overflow:hidden}
+.panel#accepted-request .request-card-list{flex:1;min-height:0;align-self:center;width:100%;max-width:min(1180px,100%)}
+.panel#accepted-request #techActiveJobsList{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(320px, min(76vw, 700px));align-items:stretch;justify-content:flex-start;gap:18px;overflow-x:auto;overflow-y:hidden;padding:14px 16px 18px;scroll-snap-type:x mandatory;scroll-padding-left:16px;-webkit-overflow-scrolling:touch}
+.panel#accepted-request #techActiveJobsList[data-card-count="1"]{justify-content:center;overflow-x:hidden;grid-auto-columns:minmax(320px, min(62vw, 700px))}
+.panel#accepted-request #techActiveJobsList[data-card-count="2"]{justify-content:center;grid-auto-columns:minmax(320px, min(calc((100% - 18px) / 2), 560px))}
+.panel#accepted-request #techActiveJobsList::-webkit-scrollbar{height:12px}
+.panel#accepted-request #techActiveJobsList::-webkit-scrollbar-track{background:#eef3fa;border-radius:999px}
+.panel#accepted-request #techActiveJobsList::-webkit-scrollbar-thumb{background:#c1d2e7;border-radius:999px;border:2px solid #eef3fa}
+.panel#accepted-request #techActiveJobsList .tech-empty{width:100%}
+.tech-ratings-shell{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.tech-ratings-summary{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}
+.tech-ratings-summary-card{padding:14px 16px;border:1px solid #d9e4f2;border-radius:12px;background:#f8fbff;display:grid;gap:8px}
+.tech-ratings-summary-card span{font-size:13px;font-weight:700;color:#607288}
+.tech-ratings-summary-card strong{font-size:30px;line-height:1;color:#23405f;font-weight:900}
+.tech-ratings-toolbar{display:flex;justify-content:flex-end}
+.tech-ratings-filter{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#415970}
+.tech-ratings-filter select{min-height:36px;border:1px solid #cfd8eb;border-radius:10px;padding:6px 10px;font-size:13px;font-weight:700;color:#264767;background:#fff}
+.tech-history-toolbar{max-width:600px;margin:0 auto 14px;display:flex;justify-content:flex-end;align-items:center;padding:0;background:transparent;border:none;box-shadow:none}
+.tech-history-filter{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:800;color:#355476;background:transparent}
+.tech-history-filter select{min-height:38px;min-width:168px;border:1px solid #c6d5e8;border-radius:12px;padding:7px 12px;font-size:13px;font-weight:800;color:#23405f;background:rgba(255,255,255,0.72);box-shadow:none}
+.tech-history-filter select:focus{outline:none;border-color:#7fa5d8;box-shadow:0 0 0 3px rgba(64,117,193,0.12)}
+.tech-ratings-list{display:flex;flex-direction:column;gap:12px}
+.tech-rating-card{background:#fff;border:1px solid #dbe4f1;border-radius:14px;padding:14px 16px;display:grid;gap:10px;box-shadow:0 4px 12px rgba(20,55,103,0.05)}
+.tech-rating-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.tech-rating-card-head h3{margin:0;color:#20364f;font-size:18px;line-height:1.2}
+.tech-rating-card-head p{margin:4px 0 0;color:#607288;font-size:13px}
+.tech-rating-pill{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border-radius:999px;background:#fff7de;border:1px solid #f1e4b8;color:#81590b;font-size:13px;font-weight:800;white-space:nowrap}
+.tech-rating-stars{display:flex;align-items:center;gap:4px}
+.tech-rating-star{font-size:18px;line-height:1;color:#d7deea}
+.tech-rating-star.active{color:#f0b429}
+.tech-rating-card-body{display:grid;gap:6px}
+.tech-rating-card-body p{margin:0;font-size:13px;color:#334b66;line-height:1.45}
+.tech-rating-card-actions{display:flex;justify-content:flex-end;padding-top:4px;border-top:1px solid #ebf0f6}
+.tech-ratings-pagination{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.tech-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px}
+.tech-pagination-summary{font-size:12px;color:#5d7087;font-weight:700}
+.tech-pagination-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.tech-pagination-label{font-size:12px;color:#415970;font-weight:700}
+.tech-pagination-select{min-height:34px;border:1px solid #cfd8eb;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#264767;background:#fff}
+.tech-pagination-btn{min-height:34px;border:1px solid #cfd8eb;border-radius:8px;padding:6px 12px;background:#fff;color:#2d5076;font-size:12px;font-weight:800;cursor:pointer}
+.tech-pagination-btn:hover{background:#f2f7ff}
+.tech-pagination-btn:disabled{opacity:.55;cursor:not-allowed;background:#f7f9fc}
+.tech-pagination-page{font-size:12px;color:#415970;font-weight:800}
 .status-badge{font-size:10px;font-weight:700;text-transform:capitalize;padding:3px 9px;border-radius:999px;line-height:1;color:#fff}
 .status-badge.accepted{background:#18d646}
-.status-badge.pending{background:#c8cf18;color:#26380b}
+.status-badge.pending{background:transparent;color:#b18a00;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;font-size:12px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;padding:0 2px;border-radius:0;text-transform:none}
 .status-badge.finished{background:#18d646}
 .status-badge.declined{background:#f13f3f}
 .status-badge.offered{background:#1f67de}
+.tech-late-chip{display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:0 7px;border-radius:999px;background:#fff1f1;border:1px solid #f0c8c8;color:#b42323;font-size:11px;font-weight:800;line-height:1;vertical-align:middle;margin-left:0}
+.request-row-actions{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 
 .tech-overview-greeting{
 	margin:0 0 10px;
@@ -30,11 +76,14 @@
 
 .tech-overview{display:flex;flex-direction:column;gap:16px}
 .tech-overview-stats{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
-.tech-stat-card{background:linear-gradient(165deg,#ffffff 0%,#f3f8ff 100%);border:1px solid #dbe7f6;border-radius:14px;padding:14px 14px;min-height:98px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 8px 18px rgba(20,55,103,0.08)}
+.tech-stat-card{background:#ffffff;border:1px solid #dbe7f6;border-radius:14px;padding:14px 14px;min-height:98px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 4px 12px rgba(20,55,103,0.05);text-align:left}
 .tech-stat-card h3{margin:0;color:#3f5670;font-size:13px;font-weight:700;letter-spacing:.2px}
 .tech-stat-card p{margin:8px 0 0;color:#13365e;font-size:32px;line-height:1;font-weight:900}
+.tech-stat-card-link{appearance:none;width:100%;font:inherit;cursor:pointer;transition:transform .16s ease,box-shadow .2s ease,border-color .2s ease}
+.tech-stat-card-link:hover{transform:translateY(-2px);border-color:#b8cee9;box-shadow:0 10px 22px rgba(20,55,103,0.10)}
+.tech-stat-card-link:focus-visible{outline:2px solid #0f49e9;outline-offset:2px}
 
-.tech-assigned-wrap{background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border:1px solid #dce8f7;border-radius:14px;padding:14px;box-shadow:0 10px 22px rgba(20,55,103,0.08)}
+.tech-assigned-wrap{background:#ffffff;border:1px solid #dce8f7;border-radius:14px;padding:14px;box-shadow:0 6px 16px rgba(20,55,103,0.06)}
 .tech-assigned-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .tech-assigned-head h2{margin:0;color:#163a66;font-size:27px;line-height:1.1}
 .tech-assigned-list{display:flex;flex-direction:column;gap:10px}
@@ -48,8 +97,10 @@
 .tech-view-btn{border:1px solid #cfd8eb;background:#fff;color:#2d5076;font-size:12px;font-weight:700;border-radius:999px;padding:5px 10px;cursor:pointer}
 .tech-view-btn:hover{background:#f2f7ff}
 .tech-action-btn{border:1px solid #cfd8eb;background:#fff;color:#2d5076;font-size:12px;font-weight:700;border-radius:999px;padding:5px 10px;cursor:pointer}
-.tech-action-btn.accept{border-color:#2f9a52;color:#1f7a45;background:#eaf8ef}
-.tech-action-btn.decline{border-color:#d34a4a;color:#ba2b2b;background:#fff1f1}
+.tech-action-btn.accept{border-color:#2f9a52;color:#1f7a45;background:#ffffff}
+.tech-action-btn.decline{border-color:#d34a4a;color:#ba2b2b;background:#ffffff}
+.tech-action-btn.accept:hover{background:#eaf8ef;border-color:#258447;color:#17663a}
+.tech-action-btn.decline:hover{background:#fff1f1;border-color:#c43d3d;color:#a32020}
 .tech-action-btn.start{border-color:#e19a1f;color:#9a6407;background:#fff7e7}
 .tech-action-btn.done{border-color:#2f71da;color:#1d4f9e;background:#ecf4ff}
 
@@ -74,8 +125,8 @@
 .tech-messages-chat-form input{min-height:36px;border:1px solid #d5deec;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f3042;background:#fff}
 .tech-messages-chat-form input:focus{outline:none;border-color:#8db0e6;box-shadow:0 0 0 2px rgba(15,73,233,0.08)}
 .tech-messages-chat-form input:disabled{background:#f2f5fb;color:#708299}
-.tech-quick-update-wrap{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px 0}
-.tech-quick-update-btn{border:1px solid #cfe0f3;background:#f4f8ff;color:#21486f;font-size:11px;font-weight:700;line-height:1.2;border-radius:999px;padding:6px 10px;cursor:pointer}
+.tech-quick-update-wrap{display:flex;align-items:center;gap:8px;padding:10px 12px 0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:thin}
+.tech-quick-update-btn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-height:38px;border:1px solid #cfe0f3;background:#f4f8ff;color:#21486f;font-size:12px;font-weight:700;line-height:1.2;border-radius:999px;padding:0 14px;white-space:nowrap;cursor:pointer}
 .tech-quick-update-btn:hover{background:#eaf3ff;border-color:#b9d0ef}
 .tech-quick-update-btn:disabled{opacity:.58;cursor:not-allowed}
 
@@ -109,7 +160,8 @@
 .tech-calendar-cell{min-height:72px;padding:6px;border-right:1px solid #edf1f7;border-bottom:1px solid #edf1f7;background:#fff}
 .tech-calendar-cell.empty{background:#fcfdff}
 
-.tech-event-card{display:flex;flex-direction:column;gap:3px;background:#ecf4ff;border-left:3px solid #2f71da;border-radius:8px;padding:7px 8px}
+.tech-event-card{display:flex;flex-direction:column;gap:3px;background:#ecf4ff;border-left:3px solid #2f71da;border-radius:8px;padding:7px 8px;cursor:pointer;transition:transform .14s ease,box-shadow .14s ease}
+.tech-event-card:hover{transform:translateY(-1px);box-shadow:0 6px 14px rgba(23,58,105,0.10)}
 .tech-event-card.accepted,.tech-event-card.confirmed{background:#eaf8ef;border-left-color:#2f9a52}
 .tech-event-card.ongoing,.tech-event-card.in-progress{background:#fff7e7;border-left-color:#e19a1f}
 .tech-event-card.completed,.tech-event-card.finished{background:#edf2ff;border-left-color:#355cc8}
@@ -157,6 +209,18 @@
 #techPasswordForm{max-width:760px}
 .tech-password-grid{grid-template-columns:1fr}
 
+.tech-about-shell{max-width:980px;margin:0 auto;display:grid;gap:16px}
+.tech-about-hero,.tech-about-card,.tech-about-note-card{background:#fff;border:1px solid #dbe7f6;border-radius:14px;box-shadow:0 6px 16px rgba(20,55,103,0.06)}
+.tech-about-hero{padding:22px 24px;background:linear-gradient(180deg,#f8fbff 0%,#ffffff 100%)}
+.tech-about-kicker{margin:0 0 10px;font-size:12px;font-weight:900;letter-spacing:.12em;color:#5b7391}
+.tech-about-title{margin:0 0 12px;text-align:left}
+.tech-about-copy{margin:0;max-width:760px;font-size:14px;line-height:1.7;color:#334b66}
+.tech-about-grid{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px}
+.tech-about-card{padding:18px 18px 16px;display:grid;gap:8px}
+.tech-about-card h2,.tech-about-note-card h2{margin:0;color:#163a66;font-size:20px;line-height:1.2}
+.tech-about-card p,.tech-about-note-card p{margin:0;font-size:13px;line-height:1.65;color:#425a74}
+.tech-about-note-card{padding:18px}
+
 .tech-modal-backdrop{position:fixed;inset:0;background:rgba(17,31,51,0.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:120}
 .tech-modal-backdrop[hidden]{display:none}
 .tech-modal-card{width:100%;max-width:560px;background:#fff;border:1px solid #dce4f2;border-radius:12px;box-shadow:0 18px 36px rgba(10,27,55,0.22);overflow:hidden}
@@ -167,6 +231,23 @@
 .tech-modal-body{padding:12px 14px;display:grid;gap:8px}
 .tech-modal-body p{margin:0;font-size:13px;color:#334b66;line-height:1.4}
 .tech-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #e8edf7}
+.tech-confirm-card{max-width:420px;border-radius:20px;border:1px solid #d8e3f1;box-shadow:0 24px 56px rgba(10,27,55,0.24)}
+.tech-confirm-head{padding:18px 18px 8px;border-bottom:none;align-items:flex-start}
+.tech-confirm-header-copy{display:grid;gap:4px}
+.tech-confirm-kicker{margin:0;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#7287a1}
+.tech-confirm-head h2{font-size:22px;line-height:1.15;color:#243d5b}
+.tech-confirm-head .tech-modal-close{min-width:42px;height:42px;border-radius:13px;color:#5f7590}
+.tech-confirm-body{padding:2px 18px 4px;gap:10px}
+.tech-confirm-body p{margin:0}
+.tech-confirm-body #techActionConfirmText{font-size:17px;line-height:1.45;color:#203a5a;font-weight:700}
+.tech-confirm-detail{font-size:13px;line-height:1.5;color:#657a94}
+.tech-confirm-actions{padding:14px 18px 18px;border-top:none}
+.tech-confirm-actions .tech-view-btn,.tech-confirm-actions .tech-action-btn{min-width:104px;min-height:40px;justify-content:center;font-size:13px;font-weight:800}
+.tech-confirm-actions .tech-view-btn{border-color:#ccd8e8}
+.tech-confirm-actions .tech-confirm-primary.accept{background:#1f7a45;border-color:#1f7a45;color:#fff}
+.tech-confirm-actions .tech-confirm-primary.accept:hover{background:#17663a;border-color:#17663a;color:#fff}
+.tech-confirm-actions .tech-confirm-primary.decline{background:#ba2b2b;border-color:#ba2b2b;color:#fff}
+.tech-confirm-actions .tech-confirm-primary.decline:hover{background:#a32020;border-color:#a32020;color:#fff}
 
 .tech-chat-wrap{margin-top:6px;border:1px solid #e1e8f3;border-radius:10px;background:#fbfdff;padding:10px;display:grid;gap:8px}
 .tech-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
@@ -195,7 +276,7 @@
 .tech-assigned-item,.request-row{cursor:pointer}
 .tech-assigned-item:hover,.request-row:hover{background:#f9fbff}
 
-.tech-today-item{background:#fff;border:1px solid #d8e2ee;border-radius:14px;box-shadow:0 2px 8px rgba(14,42,71,0.08);padding:14px;display:grid;gap:10px;cursor:pointer}
+.tech-today-item{background:#fff;border:1px solid #d8e2ee;border-radius:14px;box-shadow:0 2px 8px rgba(14,42,71,0.08);padding:14px;display:grid;gap:10px;cursor:pointer;scroll-snap-align:start;min-width:0;height:100%}
 .tech-today-item-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .tech-today-item-head h3{margin:0;font-size:16px;color:#223a57}
 .tech-today-item-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
@@ -211,6 +292,7 @@
 
 @media(max-width:1200px){
 	.tech-overview-stats{grid-template-columns:repeat(2,minmax(140px,1fr))}
+	.tech-about-grid{grid-template-columns:1fr}
 	.tech-messages-shell{grid-template-columns:1fr}
 	.tech-messages-threads{min-height:unset;max-height:240px}
 	.tech-messages-main{min-height:360px}
@@ -222,5 +304,18 @@
 }
 
 @media(max-width:700px){
+	.tech-about-hero,.tech-about-card,.tech-about-note-card{padding:16px}
 	.tech-overview-stats{grid-template-columns:1fr}
+	.tech-ratings-summary{grid-template-columns:1fr}
+	.tech-ratings-toolbar{justify-content:flex-start}
+	.tech-history-toolbar{justify-content:flex-start}
+	.tech-history-filter{width:100%;justify-content:space-between}
+	.tech-history-filter select{min-width:0;flex:1}
+	.tech-pagination{align-items:flex-start}
+	.tech-pagination-controls{margin-left:0}
+	.panel#accepted-request{max-height:none;overflow:visible}
+	.panel#accepted-request .request-card-list{overflow:visible}
+	.panel#accepted-request #techActiveJobsList[data-card-count="1"]{grid-auto-columns:minmax(280px, 92vw)}
+	.panel#accepted-request #techActiveJobsList[data-card-count="2"]{justify-content:flex-start;grid-auto-columns:minmax(280px, 82vw)}
+	.panel#accepted-request #techActiveJobsList{grid-auto-columns:minmax(280px, 88vw);padding-inline:12px}
 }

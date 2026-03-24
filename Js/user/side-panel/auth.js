@@ -6,6 +6,9 @@
   const DISABLED_ACCOUNT_MESSAGE = 'Your account has been disabled. Please contact the administrator for assistance.';
 
   let stopDisabledStateWatcher = null;
+  let disabledStatePollTimer = null;
+  let currentDisabledStateUser = null;
+  let disabledResumeChecksBound = false;
 
   async function writeSessionLog(payload) {
     try {
@@ -46,6 +49,12 @@
     stopDisabledStateWatcher = null;
   }
 
+  function clearDisabledStatePolling() {
+    if (!disabledStatePollTimer) return;
+    clearInterval(disabledStatePollTimer);
+    disabledStatePollTimer = null;
+  }
+
   async function forceDisabledAccountLogout() {
     rememberDisabledAccountNotice();
     try {
@@ -57,6 +66,56 @@
     ns.redirectToLogin();
   }
 
+  async function isDisabledIdentity(user) {
+    if (!user || !usersDb || typeof usersDb.isAccountDisabledByIdentity !== 'function') return false;
+    try {
+      return await usersDb.isAccountDisabledByIdentity(user.uid, user.email || '');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function runDisabledStateCheckNow() {
+    const activeUser = currentDisabledStateUser || (usersDb && usersDb.auth ? usersDb.auth.currentUser : null);
+    if (!activeUser) return;
+    if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState === 'hidden') return;
+    if (await isDisabledIdentity(activeUser)) {
+      clearDisabledStatePolling();
+      await forceDisabledAccountLogout();
+    }
+  }
+
+  function bindDisabledStateResumeChecks() {
+    if (disabledResumeChecksBound) return;
+    disabledResumeChecksBound = true;
+    window.addEventListener('focus', () => {
+      void runDisabledStateCheckNow();
+    });
+    window.addEventListener('pageshow', () => {
+      void runDisabledStateCheckNow();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      void runDisabledStateCheckNow();
+    });
+  }
+
+  function startDisabledStatePolling(user) {
+    clearDisabledStatePolling();
+    if (!user) return;
+    disabledStatePollTimer = setInterval(async () => {
+      const activeUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
+      if (!activeUser) {
+        clearDisabledStatePolling();
+        return;
+      }
+      if (await isDisabledIdentity(activeUser)) {
+        clearDisabledStatePolling();
+        await forceDisabledAccountLogout();
+      }
+    }, 4000);
+  }
+
   function bindDisabledStateWatcher(user) {
     clearDisabledStateWatcher();
 
@@ -65,23 +124,34 @@
     if (!uid || !rtdb) return;
 
     const refs = [
+      rtdb.ref(`accountStatus/${uid}`),
       rtdb.ref(`customers/${uid}`),
       rtdb.ref(`users/${uid}`),
       rtdb.ref(`technicians/${uid}`)
     ];
     const listeners = [];
-    const state = { customers: null, users: null, technicians: null };
+    const state = { accountStatus: null, customers: null, users: null, technicians: null };
     let handlingDisabled = false;
 
-    const evaluate = async () => {
+    const handlePermissionLoss = async (error) => {
       if (handlingDisabled) return;
-      const records = [state.customers, state.users, state.technicians].filter(Boolean);
-      if (!records.some((record) => record && record.isActive === false)) return;
+      const code = String(error && error.code ? error.code : '').toLowerCase();
+      if (!code.includes('permission-denied')) return;
       handlingDisabled = true;
       await forceDisabledAccountLogout();
     };
 
-    ['customers', 'users', 'technicians'].forEach((key, index) => {
+    const evaluate = async () => {
+      if (handlingDisabled) return;
+      const records = [state.accountStatus, state.customers, state.users, state.technicians].filter(Boolean);
+      const disabledInRecords = records.some((record) => record && record.isActive === false);
+      const disabledByIdentity = disabledInRecords ? true : await isDisabledIdentity(user);
+      if (!disabledInRecords && !disabledByIdentity) return;
+      handlingDisabled = true;
+      await forceDisabledAccountLogout();
+    };
+
+    ['accountStatus', 'customers', 'users', 'technicians'].forEach((key, index) => {
       const ref = refs[index];
       const listener = (snapshot) => {
         state[key] = snapshot && typeof snapshot.exists === 'function' && snapshot.exists()
@@ -90,14 +160,18 @@
         void evaluate();
       };
       listeners.push(listener);
-      ref.on('value', listener);
+      ref.on('value', listener, handlePermissionLoss);
     });
 
     stopDisabledStateWatcher = function stopWatcher() {
       refs.forEach((ref, index) => {
         const listener = listeners[index];
-        if (!ref || typeof ref.off !== 'function' || typeof listener !== 'function') return;
-        ref.off('value', listener);
+        if (!ref || typeof ref.off !== 'function') return;
+        if (typeof listener === 'function') {
+          ref.off('value', listener);
+          return;
+        }
+        ref.off('value');
       });
     };
   }
@@ -197,13 +271,17 @@
 
     usersDb.auth.onAuthStateChanged(async (user) => {
       if (!user) {
+        currentDisabledStateUser = null;
         clearDisabledStateWatcher();
+        clearDisabledStatePolling();
         scheduleRedirectIfStillSignedOut();
         return;
       }
 
+      currentDisabledStateUser = user;
       clearRedirectTimer();
       bindDisabledStateWatcher(user);
+      startDisabledStatePolling(user);
       void ensureUserNodeRecord(user);
 
       let profile = null;
@@ -219,7 +297,7 @@
         profile = ns.getCachedProfile(user);
       }
 
-      if (profile && profile.isActive === false) {
+      if ((profile && profile.isActive === false) || await isDisabledIdentity(user)) {
         await forceDisabledAccountLogout();
         return;
       }
@@ -277,6 +355,7 @@
   };
 
   function initAuthBindings() {
+    bindDisabledStateResumeChecks();
     ns.bindAuthState();
     ns.bindSignOut();
   }

@@ -309,6 +309,7 @@
     updateAddress: profile.updateAddress.bind(profile),
     deleteAddress: profile.deleteAddress.bind(profile),
     signInWithEmail: profile.signInWithEmail.bind(profile),
+    isAccountDisabledByIdentity: profile.isAccountDisabledByIdentity.bind(profile),
     signOut: profile.signOut.bind(profile),
     sendEmailVerificationCode: profile.sendEmailVerificationCode.bind(profile),
     verifyEmailVerificationCode: profile.verifyEmailVerificationCode.bind(profile),
@@ -323,6 +324,7 @@
     subscribeAllRequests: booking.subscribeAllRequests.bind(booking),
     updateBookingRequestStatus: booking.updateBookingRequestStatus.bind(booking),
     cancelBookingRequest: booking.cancelBookingRequest.bind(booking),
+    saveBookingRequestReview: booking.saveBookingRequestReview.bind(booking),
     syncScheduleLockForRequest: booking.syncScheduleLockForRequest.bind(booking),
 
     logSessionEvent,

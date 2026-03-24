@@ -452,6 +452,23 @@
     };
   }
 
+  async function ensureIdentityEnabled(uid, email) {
+    if (!window.usersDatabase || typeof window.usersDatabase.isAccountDisabledByIdentity !== 'function') {
+      return true;
+    }
+
+    const disabled = await window.usersDatabase.isAccountDisabledByIdentity(uid, email);
+    if (disabled) {
+      try {
+        await window.usersDatabase.signOut();
+      } catch (_) {
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   ns.handleLogin = async function handleLogin(emailInput, passwordInput) {
     const identifier = (emailInput && emailInput.value ? emailInput.value : '').trim();
     const password = passwordInput && passwordInput.value ? passwordInput.value : '';
@@ -513,6 +530,12 @@
     const authEmail = normalizedIdentifier;
 
     if (authEmail === TECHNICIAN_DEMO_EMAIL && password === TECHNICIAN_DEMO_PASSWORD) {
+      if (!(await ensureIdentityEnabled('', TECHNICIAN_DEMO_EMAIL))) {
+        ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
+        if (passwordInput) passwordInput.focus();
+        return;
+      }
+
       let demoProfile = null;
       try {
         if (window.usersDatabase && typeof window.usersDatabase.getUserByEmail === 'function') {
@@ -563,6 +586,12 @@
       const authUid = String(authUser && authUser.uid ? authUser.uid : '').trim();
       const effectiveEmail = String(authUser && authUser.email ? authUser.email : authEmail);
 
+      if (!(await ensureIdentityEnabled(authUid, effectiveEmail))) {
+        ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
+        if (passwordInput) passwordInput.focus();
+        return;
+      }
+
       const resolvedProfile = await resolveProfileFast(authUid, effectiveEmail);
       let profile = resolvedProfile.profile;
 
@@ -607,11 +636,7 @@
       const role = String(profile && profile.role ? profile.role : '').toLowerCase();
       const isActive = !(profile && profile.isActive === false);
 
-      if (!isActive) {
-        try {
-          await window.usersDatabase.signOut();
-        } catch (_) {
-        }
+      if (!isActive || !(await ensureIdentityEnabled(authUid, effectiveEmail))) {
         ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
         if (passwordInput) passwordInput.focus();
         return;
@@ -686,6 +711,10 @@
             msg = 'Incorrect password.';
             ns.setError(passwordInput, msg);
             break;
+          case 'auth/user-disabled':
+            msg = DISABLED_ACCOUNT_MESSAGE;
+            ns.setError(passwordInput, msg);
+            break;
           case 'auth/user-not-found':
             try {
               const bootstrapped = await tryBootstrapExistingTechnician(authEmail, password);
@@ -695,6 +724,11 @@
                     await window.usersDatabase.signOut();
                   } catch (_) {
                   }
+                  ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
+                  if (passwordInput) passwordInput.focus();
+                  return;
+                }
+                if (!(await ensureIdentityEnabled(bootstrapped.authUser.uid, authEmail))) {
                   ns.setError(passwordInput, DISABLED_ACCOUNT_MESSAGE);
                   if (passwordInput) passwordInput.focus();
                   return;
@@ -730,7 +764,11 @@
             break;
           case 'permission-denied':
           case 'firestore/permission-denied':
-            msg = 'Signed in, but profile access is restricted. Please contact support to update account permissions.';
+            try {
+              await window.usersDatabase.signOut();
+            } catch (_) {
+            }
+            msg = DISABLED_ACCOUNT_MESSAGE;
             ns.setError(passwordInput, msg);
             break;
           default:

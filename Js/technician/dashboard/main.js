@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const LOCATION_REGEX = /^[A-Za-z0-9 ,.#\-\/()'&]+$/;
   const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000;
   const FORGOT_PASSWORD_COOLDOWN_KEY = 'hfs_tech_forgot_password_cooldown';
+  const LATE_COMPLETION_THRESHOLD_MS = 60 * 60 * 1000;
   const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';
   const NORTH_LUZON_PROVINCES = [
     { name: 'Abra', code: '140100000' },
@@ -65,6 +66,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let activePeerPresenceUid = '';
   let activeMessagesRequestId = '';
   let activeAcceptedMessageRequests = [];
+  let historyJobsPage = 1;
+  let historyJobsPerPage = 10;
+  let activeOpenJobsFilter = 'waiting';
+  let activeHistoryJobsFilter = 'all';
+  let ratingsPage = 1;
+  let ratingsFilter = 'all';
+  let lastSyncedRatingAggregateSignature = '';
   const peerPresenceByUid = Object.create(null);
   const customerNameByUid = Object.create(null);
   const customerNameByEmail = Object.create(null);
@@ -156,8 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
         location: 'Tapuac District, Dagupan City',
         mediaAttachments: ['bathroom-pipe-crack.jpg'],
         assignedTechnicianId: uid,
-        assignedTechnicianEmail: email,
-        rating: 4.8
+        assignedTechnicianEmail: email
       },
       {
         id: 'sample_pending_002',
@@ -341,6 +348,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function normalizeSpaces(value) {
     return String(value || '').trim().replace(/\s+/g, ' ');
+  }
+
+  function resolveTechnicianResetUrl() {
+    const config = window.HOMEFIX_FIREBASE_CONFIG || {};
+    const authDomainRaw = String(config.authDomain || '').trim();
+    const resetPath = '/html/technician/reset-password.html';
+
+    if (authDomainRaw) {
+      const host = authDomainRaw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+      return `https://${host}${resetPath}`;
+    }
+
+    try {
+      const current = new URL(window.location.href);
+      if (/^https?:$/i.test(current.protocol)) {
+        return `${current.origin}${resetPath}`;
+      }
+    } catch (_) {
+    }
+
+    return '';
   }
 
   function looksLikeEmail(value) {
@@ -1330,20 +1358,10 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        const confirmed = window.confirm(`Send a password reset link to ${email}?`);
-        if (!confirmed) {
-          setPasswordMessage('Password reset request cancelled.', 'error');
-          return;
-        }
-
-        try {
-          await auth.sendPasswordResetEmail(email);
-          setForgotPasswordCooldownExpiry(email, Date.now() + FORGOT_PASSWORD_COOLDOWN_MS);
-          startForgotPasswordCooldownWatcher(email);
-          setPasswordMessage('Password reset link sent to your email.', 'success');
-        } catch (_) {
-          setPasswordMessage('Failed to send reset link. Please try again.', 'error');
-        }
+        const target = email
+          ? `forgot-password.html?email=${encodeURIComponent(email)}`
+          : 'forgot-password.html';
+        window.location.href = target;
       });
     }
   }
@@ -1524,7 +1542,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function normalizeStatus(item) {
     const status = String(item && item.status ? item.status : 'pending').trim().toLowerCase();
     if (status === 'approved') return 'accepted';
+    if (status === 'done') return 'completed';
     return status;
+  }
+
+  function isDoneHistoryStatus(status) {
+    return status === 'completed' || status === 'finished';
+  }
+
+  function isCancelledHistoryStatus(status) {
+    return status === 'declined' || status === 'rejected' || status === 'cancelled' || status === 'canceled';
   }
 
   function formatStatus(status) {
@@ -1762,109 +1789,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function startOwnPresenceTracking(profile) {
     stopOwnPresenceTracking();
-    if (presenceTrackingDisabled) return;
-
-    const uid = String(profile && profile.uid ? profile.uid : '').trim();
-    if (!uid) return;
-
-    const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
-      ? usersDb.firebase.database()
-      : null;
-    if (!rtdb) return;
-
-    const connectedRef = rtdb.ref('.info/connected');
-    const presenceRef = rtdb.ref(`presence/${uid}`);
-    const serverTimestamp = usersDb && usersDb.firebase && usersDb.firebase.database && usersDb.firebase.database.ServerValue
-      ? usersDb.firebase.database.ServerValue.TIMESTAMP
-      : Date.now();
-
-    const onConnected = (snapshot) => {
-      if (!snapshot || snapshot.val() !== true) return;
-
-      presenceRef.onDisconnect().set({
-        uid,
-        role: 'technician',
-        state: 'offline',
-        lastChanged: serverTimestamp
-      }).then(() => {
-        return presenceRef.set({
-          uid,
-          role: 'technician',
-          state: 'online',
-          lastChanged: serverTimestamp
-        });
-      }).catch((err) => {
-        if (!isPermissionDeniedError(err)) return;
-        presenceTrackingDisabled = true;
-        stopOwnPresenceTracking();
-      });
-    };
-
-    connectedRef.on('value', onConnected, (err) => {
-      if (!isPermissionDeniedError(err)) return;
-      presenceTrackingDisabled = true;
-      stopOwnPresenceTracking();
-    });
-    unsubscribeOwnPresence = () => {
-      connectedRef.off('value', onConnected);
-      if (presenceTrackingDisabled) return;
-      presenceRef.set({
-        uid,
-        role: 'technician',
-        state: 'offline',
-        lastChanged: Date.now()
-      }).catch(() => {});
-    };
   }
 
   function getCustomerPresenceUid(item) {
     return String(item && item.customerId ? item.customerId : '').trim();
   }
 
-  function updateMessagesPeerPresence(item) {
-    const el = document.getElementById('techMessagesPeerPresence');
-    if (!el) return;
-    const uid = getCustomerPresenceUid(item);
-    const presence = uid ? peerPresenceByUid[uid] : null;
-    const statusLabel = getPresenceLabel(presence);
-    el.textContent = `Customer status: ${statusLabel}`;
-  }
-
   function bindPeerPresence(item) {
-    const uid = getCustomerPresenceUid(item);
-    updateMessagesPeerPresence(item);
-
-    if (!uid) {
-      stopPeerPresenceSubscription();
-      return;
-    }
-
-    if (uid === activePeerPresenceUid && typeof unsubscribePeerPresence === 'function') {
-      return;
-    }
-
     stopPeerPresenceSubscription();
-
-    const rtdb = usersDb && usersDb.firebase && typeof usersDb.firebase.database === 'function'
-      ? usersDb.firebase.database()
-      : null;
-    if (!rtdb || presenceTrackingDisabled) return;
-
-    activePeerPresenceUid = uid;
-    const ref = rtdb.ref(`presence/${uid}`);
-    const onValue = (snapshot) => {
-      peerPresenceByUid[uid] = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || null) : null;
-      updateMessagesPeerPresence(item);
-    };
-
-    ref.on('value', onValue, () => {
-      peerPresenceByUid[uid] = null;
-      updateMessagesPeerPresence(item);
-    });
-
-    unsubscribePeerPresence = () => {
-      ref.off('value', onValue);
-    };
   }
 
   function isImageMediaType(value) {
@@ -2177,7 +2109,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const attachBtn = document.getElementById('techMessagesAttachBtn');
     const title = document.getElementById('techMessagesRequestTitle');
     const meta = document.getElementById('techMessagesRequestMeta');
-    const presence = document.getElementById('techMessagesPeerPresence');
 
     if (empty) empty.hidden = true;
     if (!conversation) return;
@@ -2191,7 +2122,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!enabled) {
       if (title) title.textContent = 'Request';
       if (meta) meta.textContent = 'Accepted request chat';
-      if (presence) presence.textContent = 'Customer status: Offline';
       if (list) list.innerHTML = '<div class="tech-chat-empty">No messages yet.</div>';
     }
   }
@@ -2205,8 +2135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('techMessagesChatForm');
     const title = document.getElementById('techMessagesRequestTitle');
     const meta = document.getElementById('techMessagesRequestMeta');
-    const presence = document.getElementById('techMessagesPeerPresence');
-    if (!list || !attachBtn || !attachInput || !input || !sendBtn || !form || !title || !meta || !presence) return;
+    if (!list || !attachBtn || !attachInput || !input || !sendBtn || !form || !title || !meta) return;
     const quickWrap = ensureQuickUpdateContainer(form, 'techMessagesQuickUpdates');
 
     stopMessagesChatSubscription();
@@ -2441,6 +2370,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function openMessagesForRequest(requestId) {
+    const targetRequestId = String(requestId || '').trim();
+    if (!targetRequestId) return false;
+
+    activeMessagesRequestId = targetRequestId;
+    showSection('messages-page');
+
+    const selected = activeAcceptedMessageRequests.find((item) => String(item && item.id ? item.id : '') === targetRequestId)
+      || Array.from(technicianRequestLookup.values()).find((item) => String(item && item.id ? item.id : '') === targetRequestId);
+
+    if (!selected) return false;
+
+    bindMessagesChatThread(selected);
+    renderMessagesThreadList(activeAcceptedMessageRequests);
+    return true;
+  }
+
   function escapeHtml(value) {
     return String(value || '')
       .replace(/&/g, '&amp;')
@@ -2469,12 +2415,172 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getRating(item) {
-    const candidates = [item && item.rating, item && item.technicianRating, item && item.customerRating, item && item.reviewRating];
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+    const candidates = [
+      item && item.customerRating,
+      item && item.reviewRating,
+      details && details.customerRating,
+      details && details.reviewRating,
+      item && item.rating,
+      details && details.rating,
+      item && item.technicianRating,
+      details && details.technicianRating
+    ];
     for (const candidate of candidates) {
       const numeric = Number(candidate);
       if (Number.isFinite(numeric) && numeric > 0) return numeric;
     }
     return null;
+  }
+
+  function getStoredProfileRatingAggregate(profile) {
+    const source = profile && typeof profile === 'object' ? profile : {};
+    const averageCandidates = [source.averageRating, source.ratingAverage, source.avgRating, source.rating];
+    let average = 0;
+    for (let index = 0; index < averageCandidates.length; index += 1) {
+      const numeric = Number(averageCandidates[index]);
+      if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 5) {
+        average = numeric;
+        break;
+      }
+    }
+
+    const countCandidates = [source.ratingCount, source.reviewCount, source.customerReviewCount];
+    let count = 0;
+    for (let index = 0; index < countCandidates.length; index += 1) {
+      const numeric = Number(countCandidates[index]);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        count = Math.max(0, Math.round(numeric));
+        break;
+      }
+    }
+
+    return { average, count };
+  }
+
+  async function syncOwnRatingAggregate(profile, averageValue, countValue) {
+    if (!(usersDb && typeof usersDb.updateUserProfile === 'function')) return;
+    const technicianUid = normalizeText(profile && profile.uid ? profile.uid : '');
+    if (!technicianUid) return;
+
+    const average = Number.isFinite(Number(averageValue)) ? Number(Number(averageValue).toFixed(2)) : 0;
+    const count = Math.max(0, Math.round(Number(countValue) || 0));
+    const signature = `${technicianUid}|${average}|${count}`;
+    if (signature === lastSyncedRatingAggregateSignature) return;
+
+    const stored = getStoredProfileRatingAggregate(profile);
+    const storedAverage = Number.isFinite(Number(stored.average)) ? Number(Number(stored.average).toFixed(2)) : 0;
+    const storedCount = Math.max(0, Math.round(Number(stored.count) || 0));
+    if (storedAverage === average && storedCount === count) {
+      lastSyncedRatingAggregateSignature = signature;
+      return;
+    }
+
+    try {
+      await usersDb.updateUserProfile(technicianUid, {
+        averageRating: average,
+        ratingAverage: average,
+        avgRating: average,
+        rating: average,
+        ratingCount: count,
+        reviewCount: count,
+        customerReviewCount: count,
+        lastRatingUpdatedAt: Date.now()
+      });
+      if (profile && typeof profile === 'object') {
+        profile.averageRating = average;
+        profile.ratingAverage = average;
+        profile.avgRating = average;
+        profile.rating = average;
+        profile.ratingCount = count;
+        profile.reviewCount = count;
+        profile.customerReviewCount = count;
+      }
+      lastSyncedRatingAggregateSignature = signature;
+    } catch (_) {
+    }
+  }
+
+  function isDemoOrTestText(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return false;
+    return normalized === 'test'
+      || normalized === 'demo'
+      || normalized === 'test test'
+      || normalized.startsWith('test ')
+      || normalized.endsWith(' test')
+      || normalized.includes(' demo')
+      || normalized.includes('demo ')
+      || normalized.includes('@test.')
+      || normalized.includes('@demo.')
+      || normalized.includes('example.com')
+      || normalized.includes('sample_')
+      || normalized.startsWith('sample_')
+      || normalized.startsWith('test_')
+      || normalized.startsWith('demo_');
+  }
+
+  function isDemoOrTestRequest(item) {
+    const details = item && item.requestDetails && typeof item.requestDetails === 'object'
+      ? item.requestDetails
+      : {};
+    const signals = [
+      item && item.id,
+      item && item.requestId,
+      item && item.customerName,
+      item && item.customerEmail,
+      item && item.customerId,
+      item && item.customerUid,
+      item && item.customerFirstName,
+      item && item.customerLastName,
+      details && details.customerName,
+      details && details.customerEmail,
+      details && details.customerId,
+      details && details.customerUid,
+      details && details.customerFirstName,
+      details && details.customerLastName,
+      getCustomerDisplayLabel(item),
+      getRequestLabel(item)
+    ];
+
+    return signals.some((value) => isDemoOrTestText(value));
+  }
+
+  function hasDisplayableCustomerRating(item) {
+    const status = normalizeStatus(item);
+    const rating = getRating(item);
+    if (!(status === 'completed' || status === 'finished')) return false;
+    if (!Number.isFinite(rating) || rating <= 0) return false;
+    if (isDemoOrTestRequest(item)) return false;
+    return true;
+  }
+
+  function getReviewText(item) {
+    const candidates = [item && item.reviewComment, item && item.comment, item && item.feedback, item && item.customerFeedback, item && item.reviewText];
+    for (const candidate of candidates) {
+      const text = normalizeSpaces(candidate);
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function buildRatingStarsMarkup(rating) {
+    const safeRating = Number.isFinite(Number(rating)) ? Number(rating) : 0;
+    const activeStars = Math.max(0, Math.min(5, Math.round(safeRating)));
+    let html = '';
+    for (let index = 0; index < 5; index += 1) {
+      html += `<span class="tech-rating-star${index < activeStars ? ' active' : ''}">★</span>`;
+    }
+    return html;
+  }
+
+  function matchesRatingsFilter(item) {
+    if (ratingsFilter === 'all') return true;
+    const rating = getRating(item);
+    if (!Number.isFinite(rating)) return false;
+    return Math.round(rating) === Number(ratingsFilter);
   }
 
   function getRequestLabel(item) {
@@ -3045,6 +3151,32 @@ document.addEventListener('DOMContentLoaded', () => {
     return new Date(scheduleDate.getFullYear(), scheduleDate.getMonth(), scheduleDate.getDate(), hour, 0, 0, 0);
   }
 
+  function getCompletionTimeValue(item) {
+    return toTimeValue(
+      item && (
+        item.completedAt
+        || item.finishedAt
+        || item.technicianUpdatedAt
+        || item.updatedAt
+      )
+    );
+  }
+
+  function isCompletionLate(item, completionTimeValue = getCompletionTimeValue(item)) {
+    const scheduledAt = getScheduledStartDateTime(item);
+    if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return false;
+    const completedAt = Number(completionTimeValue);
+    if (!Number.isFinite(completedAt) || completedAt <= 0) return false;
+    return completedAt - scheduledAt.getTime() > LATE_COMPLETION_THRESHOLD_MS;
+  }
+
+  function isLateCompletedRequest(item) {
+    const status = normalizeStatus(item);
+    if (!(status === 'completed' || status === 'finished')) return false;
+    if (typeof (item && item.completedLate) === 'boolean') return item.completedLate;
+    return isCompletionLate(item);
+  }
+
   function canStartTaskNow(item, now = new Date()) {
     const scheduledAt = getScheduledStartDateTime(item);
     // Allow legacy requests without a valid schedule to proceed instead of getting stuck.
@@ -3144,7 +3276,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!list) return;
 
     if (!Array.isArray(items) || !items.length) {
-      list.innerHTML = '<div class="tech-empty">No open jobs right now.</div>';
+      list.innerHTML = '<div class="tech-empty">No recent requests right now.</div>';
       return;
     }
 
@@ -3156,7 +3288,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ratingHtml = showRating ? `<span class="tech-rating">★ ${rating.toFixed(1)}</span>` : '';
       let actionButtons = '';
       if (status === 'offered' || status === 'pending') {
-        actionButtons = `<button type="button" class="tech-action-btn start" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
+        actionButtons = `<button type="button" class="tech-action-btn accept" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn decline" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
       } else if (status === 'accepted' || status === 'confirmed') {
         if (canStartTaskNow(item)) {
           actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
@@ -3185,6 +3317,100 @@ document.addEventListener('DOMContentLoaded', () => {
     list.innerHTML = html;
   }
 
+  function renderRatingsPanel(items) {
+    const summary = document.getElementById('techRatingsSummary');
+    const list = document.getElementById('techRatingsList');
+    const filterSelect = document.getElementById('techRatingsFilter');
+    const pagination = document.getElementById('techRatingsPagination');
+    if (!summary || !list || !filterSelect || !pagination) return;
+
+    filterSelect.value = String(ratingsFilter || 'all');
+
+    const ratedItems = (Array.isArray(items) ? items : [])
+      .filter(hasDisplayableCustomerRating)
+      .sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
+
+    const filteredItems = ratedItems.filter(matchesRatingsFilter);
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+    ratingsPage = Math.min(Math.max(ratingsPage, 1), totalPages);
+    const startIndex = (ratingsPage - 1) * pageSize;
+    const pageItems = filteredItems.slice(startIndex, startIndex + pageSize);
+
+    const average = ratedItems.length
+      ? (ratedItems.reduce((sum, item) => sum + getRating(item), 0) / ratedItems.length).toFixed(1)
+      : '0';
+
+    summary.innerHTML = `
+      <article class="tech-ratings-summary-card">
+        <span>Average Rating</span>
+        <strong>${escapeHtml(average)}</strong>
+      </article>
+      <article class="tech-ratings-summary-card">
+        <span>Total Ratings</span>
+        <strong>${escapeHtml(String(ratedItems.length))}</strong>
+      </article>
+    `;
+
+    if (!filteredItems.length) {
+      pagination.hidden = true;
+      list.innerHTML = '<div class="tech-empty">No customer ratings yet.</div>';
+      return;
+    }
+
+    list.innerHTML = pageItems.map((item) => {
+      const rating = getRating(item);
+      const reviewText = getReviewText(item);
+      const feedbackRow = reviewText
+        ? `<p><strong>Feedback:</strong> ${escapeHtml(reviewText)}</p>`
+        : '';
+      return `
+        <article class="tech-rating-card" data-request-id="${escapeHtml(item && item.id ? item.id : '')}">
+          <div class="tech-rating-card-head">
+            <div>
+              <h3>${escapeHtml(getRequestLabel(item))}</h3>
+              <p>${escapeHtml(getCustomerDisplayLabel(item) || 'Customer')} • ${escapeHtml(getScheduleText(item) || 'No schedule set')}</p>
+            </div>
+            <span class="tech-rating-pill">${escapeHtml(rating.toFixed(1))}</span>
+          </div>
+          <div class="tech-rating-stars" aria-label="${escapeHtml(rating.toFixed(1))} out of 5 stars">
+            ${buildRatingStarsMarkup(rating)}
+          </div>
+          <div class="tech-rating-card-body">
+            <p><strong>Customer:</strong> ${escapeHtml(getCustomerDisplayLabel(item) || 'Customer')}</p>
+            <p><strong>Service:</strong> ${escapeHtml(getRequestLabel(item))}</p>
+            ${feedbackRow}
+          </div>
+          <div class="tech-rating-card-actions">
+            <button type="button" class="tech-view-btn" data-request-id="${escapeHtml(item && item.id ? item.id : '')}">View</button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    pagination.hidden = false;
+    pagination.innerHTML = `
+      <button type="button" class="tech-pagination-btn" data-ratings-page-action="prev"${ratingsPage <= 1 ? ' disabled' : ''}>Prev</button>
+      <span class="tech-pagination-page">Page ${ratingsPage} of ${totalPages}</span>
+      <button type="button" class="tech-pagination-btn" data-ratings-page-action="next"${ratingsPage >= totalPages ? ' disabled' : ''}>Next</button>
+    `;
+  }
+
+  function getOpenJobsPanelTitle() {
+    if (activeOpenJobsFilter === 'active') return 'IN PROGRESS JOBS';
+    return 'PENDING JOBS';
+  }
+
+  function getOpenJobsEmptyText() {
+    if (activeOpenJobsFilter === 'active') return 'No in-progress jobs.';
+    return 'No pending jobs.';
+  }
+
+  function syncOpenJobsPanelTitle() {
+    const title = document.getElementById('techOpenJobsTitle');
+    if (title) title.textContent = getOpenJobsPanelTitle();
+  }
+
   function renderSkillChips(skills) {
     const container = document.getElementById('techSkillList');
     if (!container) return;
@@ -3199,16 +3425,99 @@ document.addEventListener('DOMContentLoaded', () => {
       .join('');
   }
 
+  function removeOverviewOpenJobsCard() {
+    const statsContainer = document.querySelector('#request-list .tech-overview-stats');
+    if (!statsContainer) return;
+
+    const cards = Array.from(statsContainer.querySelectorAll('.tech-stat-card'));
+    cards.forEach((card) => {
+      const heading = card.querySelector('h3');
+      const label = String(heading && heading.textContent ? heading.textContent : '').trim().toLowerCase();
+      if (label === 'open jobs') {
+        card.remove();
+      }
+    });
+  }
+
+  function buildSimpleRequestRowMarkup(item, containerId) {
+    const status = normalizeStatus(item);
+    const statusClass = STATUS_CLASSES[status] || 'pending';
+    const lateBadgeHtml = containerId === 'techHistoryJobsList' && isLateCompletedRequest(item)
+      ? '<span class="tech-late-chip">Late</span>'
+      : '';
+
+    let actionButtons = '';
+    if (containerId === 'techActiveJobsList') {
+      if (status === 'accepted' || status === 'confirmed') {
+        if (canStartTaskNow(item)) {
+          actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
+        } else {
+          actionButtons = '<button type="button" class="tech-action-btn start" disabled title="You can start this task at its scheduled time.">Scheduled</button>';
+        }
+      } else if (status === 'in-progress' || status === 'ongoing') {
+        actionButtons = `<button type="button" class="tech-action-btn done" data-action="done" data-request-id="${escapeHtml(item.id || '')}">Done</button>`;
+      }
+    }
+
+    return `
+      <div class="request-row" data-request-id="${escapeHtml(item.id || '')}">
+        <span class="request-name">${escapeHtml(getRequestLabel(item))} • ${escapeHtml(getCustomerDisplayLabel(item))}</span>
+        <span class="request-row-actions">
+          <span class="status-badge ${statusClass}">${escapeHtml(formatStatus(status))}</span>
+          ${lateBadgeHtml}
+          ${actionButtons}
+          <button type="button" class="tech-view-btn" data-request-id="${escapeHtml(item.id || '')}">View</button>
+        </span>
+      </div>
+    `;
+  }
+
+  function renderHistoryJobsRows(container, items, emptyText) {
+    if (!Array.isArray(items) || !items.length) {
+      historyJobsPage = 1;
+      container.innerHTML = `<div class="tech-empty">${emptyText}</div>`;
+      return;
+    }
+
+    const perPage = Number.isFinite(Number(historyJobsPerPage)) ? Math.max(1, Number(historyJobsPerPage)) : 10;
+    const totalItems = items.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    historyJobsPage = Math.min(Math.max(historyJobsPage, 1), totalPages);
+
+    const startIndex = (historyJobsPage - 1) * perPage;
+    const pageItems = items.slice(startIndex, startIndex + perPage);
+    container.innerHTML = `
+      ${pageItems.map((item) => buildSimpleRequestRowMarkup(item, 'techHistoryJobsList')).join('')}
+      <div class="tech-pagination" aria-label="Job history pagination">
+        <div class="tech-pagination-controls">
+          <button type="button" class="tech-pagination-btn" data-history-page-action="prev"${historyJobsPage <= 1 ? ' disabled' : ''}>Prev</button>
+          <span class="tech-pagination-page">Page ${historyJobsPage} of ${totalPages}</span>
+          <button type="button" class="tech-pagination-btn" data-history-page-action="next"${historyJobsPage >= totalPages ? ' disabled' : ''}>Next</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderSimpleRequestRows(containerId, items, emptyText) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
     if (!Array.isArray(items) || !items.length) {
+      if (containerId === 'techActiveJobsList') {
+        container.setAttribute('data-card-count', '0');
+      }
+      if (containerId === 'techHistoryJobsList') historyJobsPage = 1;
       container.innerHTML = `<div class="tech-empty">${emptyText}</div>`;
       return;
     }
 
+    if (containerId === 'techHistoryJobsList') {
+      renderHistoryJobsRows(container, items, emptyText);
+      return;
+    }
+
     if (containerId === 'techActiveJobsList') {
+      container.setAttribute('data-card-count', String(items.length));
       const now = new Date();
       const orderedItems = items
         .slice()
@@ -3246,7 +3555,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let actionButtons = '';
         if (status === 'offered' || status === 'pending') {
-          actionButtons = `<button type="button" class="tech-action-btn start" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
+          actionButtons = `<button type="button" class="tech-action-btn accept" data-action="accept" data-request-id="${escapeHtml(item.id || '')}">Accept</button><button type="button" class="tech-action-btn decline" data-action="decline" data-request-id="${escapeHtml(item.id || '')}">Decline</button>`;
         } else if (status === 'accepted' || status === 'confirmed') {
           if (canStartTaskNow(item)) {
             actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
@@ -3286,41 +3595,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    container.innerHTML = items.map((item) => {
-      const status = normalizeStatus(item);
-      const statusClass = STATUS_CLASSES[status] || 'pending';
-
-      let actionButtons = '';
-      if (containerId === 'techActiveJobsList') {
-        if (status === 'accepted' || status === 'confirmed') {
-          if (canStartTaskNow(item)) {
-            actionButtons = `<button type="button" class="tech-action-btn start" data-action="start" data-request-id="${escapeHtml(item.id || '')}">Start</button>`;
-          } else {
-            actionButtons = '<button type="button" class="tech-action-btn start" disabled title="You can start this task at its scheduled time.">Scheduled</button>';
-          }
-        } else if (status === 'in-progress' || status === 'ongoing') {
-          actionButtons = `<button type="button" class="tech-action-btn done" data-action="done" data-request-id="${escapeHtml(item.id || '')}">Done</button>`;
-        }
-      }
-
-      return `
-        <div class="request-row" data-request-id="${escapeHtml(item.id || '')}">
-          <span class="request-name">${escapeHtml(getRequestLabel(item))} • ${escapeHtml(getCustomerDisplayLabel(item))}</span>
-          <span>
-            <span class="status-badge ${statusClass}">${escapeHtml(formatStatus(status))}</span>
-            ${actionButtons}
-            <button type="button" class="tech-view-btn" data-request-id="${escapeHtml(item.id || '')}">View</button>
-          </span>
-        </div>
-      `;
-    }).join('');
+    container.innerHTML = items.map((item) => buildSimpleRequestRowMarkup(item, containerId)).join('');
   }
 
   async function updateRequestStatus(requestId, nextStatus) {
     const id = String(requestId || '');
     if (!id || !nextStatus) return false;
+    const normalizedNextStatus = String(nextStatus || '').toLowerCase();
+    const targetItem = technicianRequestLookup.get(id);
+    const completionTimestamp = Date.now();
+    const metaUpdates = normalizedNextStatus === 'completed'
+      ? {
+          completedAt: completionTimestamp,
+          completedLate: isCompletionLate(targetItem, completionTimestamp)
+        }
+      : {};
 
-    if (String(nextStatus).toLowerCase() === 'in-progress') {
+    if (normalizedNextStatus === 'in-progress') {
       const currentItem = technicianRequestLookup.get(id);
       if (currentItem && !canStartTaskNow(currentItem)) {
         return false;
@@ -3329,7 +3620,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (id.startsWith('sample_')) {
       const previous = sampleRequestOverrides.get(id) || {};
-      sampleRequestOverrides.set(id, Object.assign({}, previous, { status: nextStatus }));
+      sampleRequestOverrides.set(id, Object.assign({}, previous, { status: nextStatus, technicianUpdatedAt: completionTimestamp }, metaUpdates));
       return true;
     }
 
@@ -3414,7 +3705,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (usersDb && typeof usersDb.updateBookingRequestStatus === 'function') {
       try {
-        await usersDb.updateBookingRequestStatus(id, nextStatus);
+        await usersDb.updateBookingRequestStatus(id, nextStatus, metaUpdates);
         return true;
       } catch (_) {
         return false;
@@ -3424,6 +3715,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const localItem = technicianRequestLookup.get(id);
     if (localItem) {
       localItem.status = nextStatus;
+      localItem.technicianUpdatedAt = completionTimestamp;
+      Object.assign(localItem, metaUpdates);
       return true;
     }
 
@@ -3480,6 +3773,65 @@ document.addEventListener('DOMContentLoaded', () => {
     activeDetailRequestId = '';
   }
 
+  function openActionConfirmModal(options = {}) {
+    const modal = document.getElementById('techActionConfirmModal');
+    const kicker = document.getElementById('techActionConfirmKicker');
+    const title = document.getElementById('techActionConfirmTitle');
+    const text = document.getElementById('techActionConfirmText');
+    const detail = document.getElementById('techActionConfirmDetail');
+    const okBtn = document.getElementById('techActionConfirmOkBtn');
+    const cancelBtn = document.getElementById('techActionConfirmCancelBtn');
+    const closeBtn = document.getElementById('techActionConfirmCloseBtn');
+
+    const message = String(options && options.message ? options.message : 'Are you sure you want to continue?');
+    const confirmLabel = String(options && options.confirmLabel ? options.confirmLabel : 'Confirm');
+    const titleText = String(options && options.title ? options.title : 'Confirm Action');
+    const detailText = String(options && options.detail ? options.detail : 'This action will update the request status.');
+    const tone = String(options && options.tone ? options.tone : '').toLowerCase();
+
+    if (!modal || !title || !text || !detail || !okBtn || !cancelBtn || !closeBtn || !kicker) {
+      return Promise.resolve(window.confirm(message));
+    }
+
+    kicker.textContent = tone === 'decline' ? 'Decline Request' : 'Accept Request';
+    title.textContent = titleText;
+    text.textContent = message;
+    detail.textContent = detailText;
+    okBtn.textContent = confirmLabel;
+    okBtn.className = `tech-action-btn tech-confirm-primary ${tone === 'decline' ? 'decline' : 'accept'}`;
+    modal.hidden = false;
+
+    return new Promise((resolve) => {
+      const close = (result) => {
+        modal.hidden = true;
+        okBtn.onclick = null;
+        cancelBtn.onclick = null;
+        closeBtn.onclick = null;
+        modal.onclick = null;
+        document.removeEventListener('keydown', onKeyDown);
+        resolve(!!result);
+      };
+
+      const onKeyDown = (event) => {
+        if (event.key === 'Escape') {
+          close(false);
+        }
+      };
+
+      okBtn.onclick = () => close(true);
+      cancelBtn.onclick = () => close(false);
+      closeBtn.onclick = () => close(false);
+      modal.onclick = (event) => {
+        if (event.target === modal) close(false);
+      };
+
+      document.addEventListener('keydown', onKeyDown);
+      setTimeout(() => {
+        okBtn.focus();
+      }, 0);
+    });
+  }
+
   function bindRequestDetailControls() {
     const closeBtn = document.getElementById('techDetailCloseBtn');
     const closeSecondaryBtn = document.getElementById('techDetailCloseSecondaryBtn');
@@ -3495,7 +3847,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const row = event.target && event.target.closest
-        ? event.target.closest('.tech-assigned-item[data-request-id], .request-row[data-request-id]')
+        ? event.target.closest('.tech-assigned-item[data-request-id], .request-row[data-request-id], .tech-event-card[data-request-id]')
         : null;
       if (row && !(event.target && event.target.closest && event.target.closest('.tech-action-btn, .tech-view-btn'))) {
         openRequestDetails(row.getAttribute('data-request-id'));
@@ -3505,6 +3857,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (modal && !modal.hidden && event.target === modal) {
         closeRequestDetails();
       }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      const card = event.target && event.target.closest
+        ? event.target.closest('.tech-event-card[data-request-id]')
+        : null;
+      if (!card) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openRequestDetails(card.getAttribute('data-request-id'));
     });
 
     if (closeBtn) {
@@ -3565,6 +3927,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const requestId = String(actionBtn.getAttribute('data-request-id') || '').trim();
       if (!requestId || !action) return;
 
+      const targetItem = technicianRequestLookup.get(requestId);
+      const requestLabel = targetItem ? getRequestLabel(targetItem) : 'this request';
+
+      if (action === 'accept') {
+        const confirmed = await openActionConfirmModal({
+          title: 'Accept Request?',
+          message: `Accept ${requestLabel}?`,
+          confirmLabel: 'Accept',
+          tone: 'accept'
+        });
+        if (!confirmed) return;
+      }
+
+      if (action === 'decline') {
+        const confirmed = await openActionConfirmModal({
+          title: 'Decline Request?',
+          message: `Decline ${requestLabel}?`,
+          detail: 'This request will be marked as declined for your technician account and removed from your pending queue.',
+          confirmLabel: 'Decline',
+          tone: 'decline'
+        });
+        if (!confirmed) return;
+      }
+
       if (action === 'start') {
         const hasOtherActive = Array.from(technicianRequestLookup.values()).some((item) => {
           const id = String(item && item.id ? item.id : '');
@@ -3579,7 +3965,6 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        const targetItem = technicianRequestLookup.get(requestId);
         if (targetItem && !canStartTaskNow(targetItem)) {
           window.alert('This job can only be started at its scheduled time.');
           return;
@@ -3612,6 +3997,87 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function bindHistoryPaginationControls() {
+    document.addEventListener('click', (event) => {
+      const paginationBtn = event.target && event.target.closest
+        ? event.target.closest('[data-history-page-action]')
+        : null;
+      if (!paginationBtn) return;
+
+      const action = String(paginationBtn.getAttribute('data-history-page-action') || '').toLowerCase();
+      if (action === 'prev' && historyJobsPage > 1) {
+        historyJobsPage -= 1;
+      } else if (action === 'next') {
+        historyJobsPage += 1;
+      } else {
+        return;
+      }
+
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    });
+
+    document.addEventListener('change', (event) => {
+      const perPageSelect = event.target && event.target.closest
+        ? event.target.closest('#techHistoryPerPageSelect')
+        : null;
+      if (perPageSelect) {
+        const nextValue = Number(perPageSelect.value);
+        historyJobsPerPage = Number.isFinite(nextValue) && nextValue > 0 ? nextValue : 10;
+        historyJobsPage = 1;
+        loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+        return;
+      }
+
+      const historyFilterSelect = event.target && event.target.closest
+        ? event.target.closest('#techHistoryJobsFilter')
+        : null;
+      if (!historyFilterSelect) return;
+
+      activeHistoryJobsFilter = String(historyFilterSelect.value || 'all').toLowerCase();
+      historyJobsPage = 1;
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    });
+  }
+
+  function syncHistoryJobsFilterControls() {
+    const historyFilterSelect = document.getElementById('techHistoryJobsFilter');
+
+    if (historyFilterSelect) {
+      historyFilterSelect.value = activeHistoryJobsFilter;
+    }
+  }
+
+  function bindRatingsControls() {
+    document.addEventListener('click', (event) => {
+      const button = event.target && event.target.closest
+        ? event.target.closest('[data-ratings-page-action]')
+        : null;
+      if (!button) return;
+
+      const action = String(button.getAttribute('data-ratings-page-action') || '').toLowerCase();
+      if (action === 'prev' && ratingsPage > 1) {
+        ratingsPage -= 1;
+      } else if (action === 'next') {
+        ratingsPage += 1;
+      } else {
+        return;
+      }
+
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    });
+
+    document.addEventListener('change', (event) => {
+      const select = event.target && event.target.closest
+        ? event.target.closest('#techRatingsFilter')
+        : null;
+      if (!select) return;
+
+      ratingsFilter = String(select.value || 'all').toLowerCase();
+      ratingsPage = 1;
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    });
+  }
+
   function renderSampleOverview(profile) {
     const fallbackProfile = profile || { email: DEMO_TECH_EMAIL };
     const fallbackSkills = ['Plumber'];
@@ -3622,36 +4088,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item && item.id) technicianRequestLookup.set(String(item.id), item);
     });
 
-    const sampleOpenPoolCount = sampleRequests.filter((item) => {
-      const status = normalizeStatus(item);
-      if (status !== 'pending' && status !== 'offered') return false;
-      return !hasAnyAssignedTechnician(item || {});
-    }).length;
-
-    setText('techStatAssigned', String(sampleOpenPoolCount));
-    setText('techStatInProgress', String(sampleRequests.filter((item) => {
-      const status = normalizeStatus(item);
-      return status === 'accepted' || status === 'confirmed' || status === 'in-progress' || status === 'ongoing';
-    }).length));
-    setText('techStatCompleted', String(sampleRequests.filter((item) => {
-      const status = normalizeStatus(item);
-      return status === 'completed' || status === 'finished';
-    }).length));
-
-    const ratings = sampleRequests.map(getRating).filter((value) => Number.isFinite(value));
-    const average = ratings.length
-      ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
-      : '--';
-    setText('techStatRating', average === '--' ? '--' : `${average} ★`);
-
-    renderSkillChips(fallbackSkills);
-    const requestsForAcceptance = sampleRequests.filter((item) => {
-      const status = normalizeStatus(item);
-      return status === 'pending' || status === 'offered';
-    });
-    renderAssignedRequests(requestsForAcceptance);
-
-    const jobsForYou = sampleRequests
+    const sampleWaitingJobs = sampleRequests
       .filter((item) => {
         const status = normalizeStatus(item);
         if (status !== 'pending' && status !== 'offered') return false;
@@ -3659,25 +4096,53 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
 
-    setText('techStatTotal', String(jobsForYou.length));
+    const sampleActiveJobs = sampleRequests.filter((item) => {
+      const status = normalizeStatus(item);
+      return status === 'accepted' || status === 'confirmed' || status === 'in-progress' || status === 'ongoing';
+    }).sort((left, right) => getRequestDateTime(left).getTime() - getRequestDateTime(right).getTime());
+
+    setText('techStatWaiting', String(sampleWaitingJobs.length));
+    setText('techStatInProgress', String(sampleActiveJobs.length));
+    setText('techStatCompleted', String(sampleRequests.filter((item) => {
+      const status = normalizeStatus(item);
+      return status === 'completed' || status === 'finished';
+    }).length));
+
+    const ratings = sampleRequests
+      .filter(hasDisplayableCustomerRating)
+      .map(getRating)
+      .filter((value) => Number.isFinite(value));
+    const average = ratings.length
+      ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
+      : '0';
+    setText('techStatRating', average === '0' ? '0' : `${average} ★`);
+
+    renderSkillChips(fallbackSkills);
+    const recentRequests = [...sampleWaitingJobs, ...sampleActiveJobs]
+      .sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt))
+      .slice(0, 4);
+    renderAssignedRequests(recentRequests);
 
     const today = getTodayDate();
-    const activeJobs = sampleRequests.filter((item) => {
+    const todayActiveJobs = sampleActiveJobs.filter((item) => {
       const status = normalizeStatus(item);
-      if (!['accepted', 'confirmed', 'in-progress', 'ongoing'].includes(status)) return false;
       const requestDate = getRequestDate(item);
       if (status === 'in-progress' || status === 'ongoing') return true;
       return requestDate instanceof Date && isSameCalendarDate(requestDate, today);
-    }).sort((left, right) => getRequestDateTime(left).getTime() - getRequestDateTime(right).getTime());
-
-    renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs.');
-    renderSimpleRequestRows('techHistoryJobsList', [], 'No history jobs yet.');
-
-    const scheduleItems = sampleRequests.filter((item) => {
-      const status = normalizeStatus(item);
-      return status === 'accepted' || status === 'confirmed' || status === 'in-progress' || status === 'ongoing';
     });
-    renderSchedule(scheduleItems);
+
+    const allOpenJobs = activeOpenJobsFilter === 'waiting'
+      ? sampleWaitingJobs
+      : activeOpenJobsFilter === 'active'
+        ? sampleActiveJobs
+        : [...sampleWaitingJobs, ...sampleActiveJobs].sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
+
+    syncOpenJobsPanelTitle();
+    renderSimpleRequestRows('techActiveJobsList', allOpenJobs, getOpenJobsEmptyText());
+    renderSimpleRequestRows('techHistoryJobsList', [], 'No history jobs yet.');
+    renderRatingsPanel([]);
+
+    renderSchedule(todayActiveJobs);
   }
 
   function renderSchedule(items) {
@@ -3726,7 +4191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cards = itemsInCell.slice(0, 2).map((item) => {
           const status = normalizeStatus(item);
           return `
-            <article class="tech-event-card ${escapeHtml(status)}">
+            <article class="tech-event-card ${escapeHtml(status)}" data-request-id="${escapeHtml(item.id || '')}" role="button" tabindex="0" aria-label="Open ${escapeHtml(getRequestLabel(item))}">
               <div class="tech-event-time">${escapeHtml(formatHourLabel(hour))}</div>
               <div class="tech-event-name">${escapeHtml(getRequestLabel(item))}</div>
               <div class="tech-event-user">${escapeHtml(getCustomerDisplayLabel(item) || 'Booked User')}</div>
@@ -3954,21 +4419,28 @@ document.addEventListener('DOMContentLoaded', () => {
         return status === 'completed' || status === 'finished';
       }).length;
 
-      const ratings = assigned.map(getRating).filter((value) => Number.isFinite(value));
+      const ratings = assigned
+        .filter(hasDisplayableCustomerRating)
+        .map(getRating)
+        .filter((value) => Number.isFinite(value));
       const average = ratings.length
         ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
-        : '--';
+        : '0';
+      syncOwnRatingAggregate(activeTechnicianProfile || technicianProfile || {}, Number(average), ratings.length);
 
-      const openPoolCount = qualified.filter((item) => {
+      const waitingJobs = qualified.filter((item) => {
         const status = normalizeStatus(item);
-        if (status !== 'pending' && status !== 'offered') return false;
-        return !hasAnyAssignedTechnician(item || {});
-      }).length;
+        const assignedToMe = isAssignedToTech(item || {}, technicianProfile || {});
+        if (status !== 'offered' && status !== 'pending') return false;
+        if (assignedToMe) return true;
+        if (hasAnyAssignedTechnician(item || {})) return false;
+        return true;
+      }).sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
 
-      setText('techStatAssigned', String(openPoolCount));
+      setText('techStatWaiting', String(waitingJobs.length));
       setText('techStatInProgress', String(inProgressCount));
       setText('techStatCompleted', String(completedCount));
-      setText('techStatRating', average === '--' ? '--' : `${average} ★`);
+      setText('techStatRating', average === '0' ? '0' : `${average} ★`);
 
         const today = getTodayDate();
 
@@ -3987,21 +4459,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!(requestDate instanceof Date)) return true;
           return requestDate.getTime() >= today.getTime();
         }).sort((left, right) => toTimeValue(right.createdAt) - toTimeValue(left.createdAt));
-        if (getActiveSectionId() === 'request-list') {
-          renderAssignedRequests(requestsForAcceptance);
-        }
-
-      const jobsForYou = qualified.filter((item) => {
-        const status = normalizeStatus(item);
-        const assignedToMe = isAssignedToTech(item || {}, technicianProfile || {});
-        if (status !== 'offered' && status !== 'pending') return false;
-        if (assignedToMe) return true;
-        if (hasAnyAssignedTechnician(item || {})) return false;
-        return true;
-      }).sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
-
-      setText('techStatTotal', String(jobsForYou.length));
-
       const activeJobs = sourceForJobs.filter((item) => {
         const status = normalizeStatus(item);
         if (!['accepted', 'confirmed', 'in-progress', 'ongoing'].includes(status)) return false;
@@ -4027,11 +4484,43 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
       }).sort((left, right) => toTimeValue(right.createdAt) - toTimeValue(left.createdAt));
 
+      const recentRequests = [...waitingJobs, ...activeJobs]
+        .sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt))
+        .slice(0, 4);
+
+      if (getActiveSectionId() === 'request-list') {
+        renderAssignedRequests(recentRequests);
+      }
+
+      const openJobsItems = activeOpenJobsFilter === 'waiting'
+        ? waitingJobs
+        : activeOpenJobsFilter === 'active'
+          ? activeJobs
+          : [...waitingJobs, ...activeJobs].sort((left, right) => toTimeValue(right && right.createdAt) - toTimeValue(left && left.createdAt));
+
+      const historyJobsItems = activeHistoryJobsFilter === 'done'
+        ? historyJobs.filter((item) => isDoneHistoryStatus(normalizeStatus(item)))
+        : activeHistoryJobsFilter === 'cancelled'
+          ? historyJobs.filter((item) => isCancelledHistoryStatus(normalizeStatus(item)))
+          : historyJobs;
+      const historyEmptyText = activeHistoryJobsFilter === 'done'
+        ? 'No done jobs yet.'
+        : activeHistoryJobsFilter === 'cancelled'
+          ? 'No cancelled jobs yet.'
+          : 'No history jobs yet.';
+
+      syncHistoryJobsFilterControls();
+
+      syncOpenJobsPanelTitle();
+
       if (getActiveSectionId() === 'accepted-request') {
-        renderSimpleRequestRows('techActiveJobsList', jobsForYou, 'No open jobs.');
+        renderSimpleRequestRows('techActiveJobsList', openJobsItems, getOpenJobsEmptyText());
       }
       if (getActiveSectionId() === 'history-request') {
-        renderSimpleRequestRows('techHistoryJobsList', historyJobs, 'No history jobs yet.');
+        renderSimpleRequestRows('techHistoryJobsList', historyJobsItems, historyEmptyText);
+      }
+      if (getActiveSectionId() === 'ratings-page') {
+        renderRatingsPanel(assigned);
       }
 
       const scheduleItems = sourceForJobs
@@ -4059,19 +4548,22 @@ document.addEventListener('DOMContentLoaded', () => {
       if (getActiveSectionId() === 'messages-page') {
         renderMessagesPanel(activeTechnicianProfile || {}, []);
       }
-      setText('techStatTotal', '0');
-      setText('techStatAssigned', '0');
+      setText('techStatWaiting', '0');
       setText('techStatInProgress', '0');
       setText('techStatCompleted', '0');
-      setText('techStatRating', '--');
+      setText('techStatRating', '0');
       if (getActiveSectionId() === 'request-list') {
         renderAssignedRequests([]);
       }
       if (getActiveSectionId() === 'accepted-request') {
-        renderSimpleRequestRows('techActiveJobsList', [], 'No open jobs.');
+        syncOpenJobsPanelTitle();
+        renderSimpleRequestRows('techActiveJobsList', [], getOpenJobsEmptyText());
       }
       if (getActiveSectionId() === 'history-request') {
         renderSimpleRequestRows('techHistoryJobsList', [], 'No history jobs yet.');
+      }
+      if (getActiveSectionId() === 'ratings-page') {
+        renderRatingsPanel([]);
       }
       if (getActiveSectionId() === 'schedule-page') {
         renderSchedule([]);
@@ -4082,6 +4574,86 @@ document.addEventListener('DOMContentLoaded', () => {
   const navLinks = Array.from(document.querySelectorAll('.sidebar [data-section]'));
   const panels = Array.from(document.querySelectorAll('[data-panel]'));
   const navGroups = Array.from(document.querySelectorAll('.sidebar .nav-group'));
+
+  function ensureAboutPageSection() {
+    let aboutPanel = document.getElementById('about-page');
+    if (aboutPanel) return aboutPanel;
+
+    const mainContent = document.querySelector('main.content');
+    if (!mainContent) return null;
+
+    aboutPanel = document.createElement('section');
+    aboutPanel.className = 'panel';
+    aboutPanel.id = 'about-page';
+    aboutPanel.dataset.panel = 'about-page';
+    aboutPanel.hidden = true;
+    aboutPanel.innerHTML = `
+      <div class="tech-about-shell">
+        <section class="tech-about-hero">
+          <p class="tech-about-kicker">ABOUT HOMEFIXSOLUTION</p>
+          <h1 class="panel-title tech-about-title">SYSTEM OVERVIEW</h1>
+          <p class="tech-about-copy">
+            HomeFixSolution is a service management platform for customer requests, technician assignment, scheduling, messaging, job tracking, and post-service ratings. The technician dashboard is the execution layer for handling assigned service operations.
+          </p>
+        </section>
+
+        <section class="tech-about-grid" aria-label="Technician about information">
+          <article class="tech-about-card">
+            <h2>Technician Role</h2>
+            <p>The technician role is to review service requests, accept qualified work, execute scheduled jobs, update request status, and complete service tasks according to the recorded job details.</p>
+          </article>
+          <article class="tech-about-card">
+            <h2>Customer Service Support</h2>
+            <p>Technicians support customers by validating service concerns, providing status visibility, delivering the requested work on schedule, and maintaining clear service communication through the platform.</p>
+          </article>
+          <article class="tech-about-card">
+            <h2>Service Workflow</h2>
+            <p>The standard workflow is request intake, technician acceptance, schedule execution, job completion, and customer rating. Each step is tracked through dashboard state and request updates.</p>
+          </article>
+          <article class="tech-about-card">
+            <h2>Communication Channel</h2>
+            <p>The messaging and status tools function as the technician-to-customer communication channel for coordination, progress reporting, and service clarification.</p>
+          </article>
+          <article class="tech-about-card">
+            <h2>Quality and Conduct</h2>
+            <p>Service quality is measured through task completion accuracy, schedule adherence, communication clarity, and customer feedback recorded after completed jobs.</p>
+          </article>
+          <article class="tech-about-card">
+            <h2>Ratings and Improvement</h2>
+            <p>Ratings provide a performance signal for technician reliability and service quality. They support review, accountability, and continuous improvement within the platform.</p>
+          </article>
+        </section>
+
+        <section class="tech-about-note-card">
+          <h2>Operational Importance</h2>
+          <p>
+            The technician role is operationally critical because customer requests are only resolved when assigned work is executed correctly, on time, and with proper status handling.
+          </p>
+        </section>
+
+        <section class="tech-about-note-card">
+          <h2>Using the Dashboard</h2>
+          <p>
+            The dashboard is used to manage pending jobs, active work, job history, ratings, schedule data, and technician account records in a single workflow interface.
+          </p>
+        </section>
+      </div>
+    `;
+
+    mainContent.appendChild(aboutPanel);
+    panels.push(aboutPanel);
+    return aboutPanel;
+  }
+
+  const legacyAboutLink = Array.from(document.querySelectorAll('.sidebar .nav-link'))
+    .find((link) => !link.dataset.section && normalizeText(link.textContent).toLowerCase() === 'about page');
+
+  if (legacyAboutLink) {
+    legacyAboutLink.dataset.section = 'about-page';
+    navLinks.push(legacyAboutLink);
+  }
+
+  ensureAboutPageSection();
 
   function showSection(sectionId) {
     navGroups.forEach((group) => {
@@ -4108,10 +4680,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (sectionId === 'accepted-request') {
+      syncOpenJobsPanelTitle();
       loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
     }
 
     if (sectionId === 'history-request') {
+      loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
+    }
+
+    if (sectionId === 'ratings-page') {
       loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
     }
 
@@ -4124,11 +4701,49 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  ns.openMessagesForRequest = openMessagesForRequest;
+
   navLinks.forEach((link) => {
     link.addEventListener('click', () => {
+      if (link.dataset.section === 'accepted-request') {
+        activeOpenJobsFilter = 'waiting';
+      }
+      if (link.dataset.section === 'history-request') {
+        activeHistoryJobsFilter = 'all';
+      }
+      if (link.dataset.section === 'ratings-page') {
+        ratingsFilter = 'all';
+        ratingsPage = 1;
+      }
       showSection(link.dataset.section);
     });
   });
+
+  function bindOverviewCardNavigation() {
+    document.addEventListener('click', (event) => {
+      const card = event.target && event.target.closest
+        ? event.target.closest('[data-overview-target-section]')
+        : null;
+      if (!card) return;
+
+      const sectionId = String(card.getAttribute('data-overview-target-section') || '').trim();
+      const filter = String(card.getAttribute('data-overview-target-filter') || '').trim().toLowerCase();
+      if (!sectionId) return;
+
+      if (sectionId === 'accepted-request') {
+        activeOpenJobsFilter = filter || 'all';
+      }
+      if (sectionId === 'history-request') {
+        activeHistoryJobsFilter = (filter === 'completed' ? 'done' : filter) || 'all';
+      }
+      if (sectionId === 'ratings-page') {
+        ratingsFilter = 'all';
+        ratingsPage = 1;
+      }
+
+      showSection(sectionId);
+    });
+  }
 
   function ensureLocationControllersInitialized(options = {}) {
     const includeAccount = options.includeAccount !== false;
@@ -4165,12 +4780,16 @@ document.addEventListener('DOMContentLoaded', () => {
   ns.bindUserMenu();
   ns.bindAuthState();
   ns.bindSignOut();
+  removeOverviewOpenJobsCard();
   bindScheduleControls();
   bindAccountSection();
   bindPasswordSection();
   bindTechnicianOnboarding();
   bindRequestDetailControls();
   bindRequestActionControls();
+  bindHistoryPaginationControls();
+  bindRatingsControls();
+  bindOverviewCardNavigation();
   bindMessagesPanelControls();
 
   if (usersDb && usersDb.auth) {

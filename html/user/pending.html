@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Service History - HomeFixSolution</title>
-  <link rel="stylesheet" href="../../css/user/layout/dashboard.css">
-  <link rel="stylesheet" href="../../css/user/pages/pending/index.css?v=20260309a">
+  <link rel="stylesheet" href="../../css/user/layout/dashboard.css?v=20260323b">
+  <link rel="stylesheet" href="../../css/user/pages/pending/index.css?v=20260323c">
   <script src="../../Js/user/side-panel/preload.js"></script>
 </head>
 <body class="dashboard-home-page request-history-page">
@@ -95,6 +95,30 @@
         </div>
       </div>
     </div>
+
+    <div class="review-modal" id="reviewModal" hidden aria-hidden="true">
+      <div class="review-modal-card" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+        <h2 id="reviewModalTitle">Rate Technician</h2>
+        <p class="review-modal-copy" id="reviewModalCopy">Share your experience for this completed request.</p>
+        <form id="reviewForm" class="review-form" novalidate>
+          <div class="review-stars" id="reviewStars" role="radiogroup" aria-label="Technician rating">
+            <button type="button" class="review-star-btn" data-rating-value="1" aria-label="1 star" aria-pressed="false">★</button>
+            <button type="button" class="review-star-btn" data-rating-value="2" aria-label="2 stars" aria-pressed="false">★</button>
+            <button type="button" class="review-star-btn" data-rating-value="3" aria-label="3 stars" aria-pressed="false">★</button>
+            <button type="button" class="review-star-btn" data-rating-value="4" aria-label="4 stars" aria-pressed="false">★</button>
+            <button type="button" class="review-star-btn" data-rating-value="5" aria-label="5 stars" aria-pressed="false">★</button>
+          </div>
+          <p class="review-stars-label" id="reviewStarsLabel">Select a rating.</p>
+          <label class="review-label" for="reviewComment">Feedback</label>
+          <textarea id="reviewComment" class="review-textarea" maxlength="500" rows="5" placeholder="Tell us about the technician's work, communication, and professionalism."></textarea>
+          <p class="review-message" id="reviewMessage" aria-live="polite"></p>
+          <div class="review-actions">
+            <button type="button" class="modal-btn modal-btn-secondary" id="reviewCancelBtn">Cancel</button>
+            <button type="submit" class="modal-btn" id="reviewSubmitBtn">Submit Rating</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
@@ -102,11 +126,11 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   <script src="../../firebase/config/firebase-config.js"></script>
   <script src="../../databasehfs/users/core.js?v=20260312a"></script>
-  <script src="../../databasehfs/users/user-profile-database.js?v=20260319c"></script>
-  <script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
-  <script src="../../databasehfs/users/user-database.js"></script>
-  <script src="../../Js/user/side-panel/core.js?v=20260309b"></script>
-  <script src="../../Js/user/side-panel/auth.js?v=20260319b"></script>
+  <script src="../../databasehfs/users/user-profile-database.js?v=20260323g"></script>
+  <script src="../../databasehfs/users/booking-database.js?v=20260323i"></script>
+  <script src="../../databasehfs/users/user-database.js?v=20260323i"></script>
+  <script src="../../Js/user/side-panel/core.js?v=20260323c"></script>
+  <script src="../../Js/user/side-panel/auth.js?v=20260323i"></script>
   <script src="../../Js/user/side-panel/buttons/home.js"></script>
   <script src="../../Js/user/side-panel/buttons/request.js"></script>
   <script src="../../Js/user/side-panel/buttons/history.js"></script>
@@ -117,7 +141,7 @@
   <script src="../../Js/user/side-panel/buttons/logout.js"></script>
   <script src="../../Js/user/dashboard/parts/core.js?v=20260319a"></script>
   <script src="../../Js/user/dashboard/main.js"></script>
-  <script src="../../Js/user/pending/parts/core.js?v=20260315b"></script>
+  <script src="../../Js/user/pending/parts/core.js?v=20260323d"></script>
   <script src="../../Js/user/pending/index.js"></script>
 </body>
 </html>

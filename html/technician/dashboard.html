@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Technician — HomeFixSolution</title>
-  <link rel="stylesheet" href="../../css/technician/layout/dashboard.css?v=20260312b">
-  <link rel="stylesheet" href="../../css/technician/pages/dashboard/index.css?v=20260312i">
+  <link rel="stylesheet" href="../../css/technician/layout/dashboard.css?v=20260322c">
+  <link rel="stylesheet" href="../../css/technician/pages/dashboard/index.css?v=20260323j">
 </head>
 <body>
   <div class="app-shell">
@@ -29,9 +29,10 @@
     <div class="layout">
       <aside class="sidebar">
         <button class="nav-link active" type="button" data-section="request-list">Overview</button>
-        <button class="nav-link" type="button" data-section="accepted-request">Open Jobs</button>
+        <button class="nav-link" type="button" data-section="accepted-request">Pending Jobs</button>
         <button class="nav-link" type="button" data-section="messages-page">Messages</button>
         <button class="nav-link" type="button" data-section="history-request">Job History</button>
+        <button class="nav-link" type="button" data-section="ratings-page">Ratings</button>
         <button class="nav-link" type="button" data-section="schedule-page">Schedule</button>
         <details class="nav-group">
           <summary class="nav-link">Account and Security <span class="nav-caret">▼</span></summary>
@@ -40,7 +41,7 @@
             <button class="nav-sub-link" type="button" data-section="password-security">Password</button>
           </div>
         </details>
-        <button class="nav-link" type="button">About Page</button>
+        <button class="nav-link" type="button" data-section="about-page">About Page</button>
         <a class="nav-link nav-logout" href="../../login.html" data-logout="true">Log out</a>
       </aside>
 
@@ -50,39 +51,39 @@
           <h1 class="panel-title panel-title-overview">OVERVIEW</h1>
           <div class="tech-overview">
             <div class="tech-overview-stats">
-              <article class="tech-stat-card">
-                <h3>Open Jobs</h3>
-                <p id="techStatTotal">0</p>
-              </article>
-              <article class="tech-stat-card">
+              <button class="tech-stat-card tech-stat-card-link" type="button" data-overview-target-section="accepted-request" data-overview-target-filter="waiting">
+                <h3>Pending Jobs</h3>
+                <p id="techStatWaiting">0</p>
+              </button>
+              <button class="tech-stat-card tech-stat-card-link" type="button" data-overview-target-section="accepted-request" data-overview-target-filter="active">
                 <h3>In Progress</h3>
                 <p id="techStatInProgress">0</p>
-              </article>
-              <article class="tech-stat-card">
+              </button>
+              <button class="tech-stat-card tech-stat-card-link" type="button" data-overview-target-section="history-request" data-overview-target-filter="done">
                 <h3>Completed</h3>
                 <p id="techStatCompleted">0</p>
-              </article>
-              <article class="tech-stat-card">
+              </button>
+              <button class="tech-stat-card tech-stat-card-link" type="button" data-overview-target-section="ratings-page">
                 <h3>Average Rating</h3>
-                <p id="techStatRating">--</p>
-              </article>
+                <p id="techStatRating">0</p>
+              </button>
             </div>
 
             <div class="tech-assigned-wrap">
               <div class="tech-assigned-head">
-                <h2>Open Queue</h2>
+                <h2>Recent Requests</h2>
               </div>
               <div class="tech-assigned-list" id="techAssignedList">
-                <div class="tech-empty">Loading overview...</div>
+                <div class="tech-empty">Loading recent requests...</div>
               </div>
             </div>
           </div>
         </section>
 
         <section class="panel" id="accepted-request" data-panel="accepted-request" hidden>
-          <h1 class="panel-title">OPEN JOBS</h1>
+          <h1 class="panel-title" id="techOpenJobsTitle">PENDING JOBS</h1>
           <div class="request-card-list" id="techActiveJobsList">
-            <div class="tech-empty">Loading open jobs...</div>
+            <div class="tech-empty">Loading pending jobs...</div>
           </div>
         </section>
 
@@ -98,7 +99,6 @@
                   <strong id="techMessagesRequestTitle">Request</strong>
                   <span id="techMessagesRequestMeta">Accepted request chat</span>
                 </div>
-                <div class="tech-messages-peer-presence" id="techMessagesPeerPresence">Customer status: Offline</div>
                 <div class="tech-messages-chat-list" id="techMessagesChatList">
                   <div class="tech-chat-empty">No messages yet.</div>
                 </div>
@@ -115,8 +115,42 @@
 
         <section class="panel" id="history-request" data-panel="history-request" hidden>
           <h1 class="panel-title">JOB HISTORY</h1>
+          <div class="tech-history-toolbar" aria-label="Job history filters">
+            <label class="tech-history-filter" for="techHistoryJobsFilter">
+              <span>Filter</span>
+              <select id="techHistoryJobsFilter" aria-label="Filter history jobs">
+                <option value="all">All history</option>
+                <option value="done">Done</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+          </div>
           <div class="request-card-list" id="techHistoryJobsList">
             <div class="tech-empty">Loading job history...</div>
+          </div>
+        </section>
+
+        <section class="panel" id="ratings-page" data-panel="ratings-page" hidden>
+          <h1 class="panel-title">RATINGS</h1>
+          <div class="tech-ratings-shell">
+            <div class="tech-ratings-summary" id="techRatingsSummary">Loading ratings...</div>
+            <div class="tech-ratings-toolbar">
+              <label class="tech-ratings-filter" for="techRatingsFilter">
+                <span>Filter</span>
+                <select id="techRatingsFilter" aria-label="Filter ratings by stars">
+                  <option value="all">All ratings</option>
+                  <option value="5">5 stars</option>
+                  <option value="4">4 stars</option>
+                  <option value="3">3 stars</option>
+                  <option value="2">2 stars</option>
+                  <option value="1">1 star</option>
+                </select>
+              </label>
+            </div>
+            <div class="tech-ratings-list" id="techRatingsList">
+              <div class="tech-empty">Loading ratings...</div>
+            </div>
+            <div class="tech-ratings-pagination" id="techRatingsPagination" hidden></div>
           </div>
         </section>
 
@@ -253,6 +287,59 @@
             <p class="tech-account-message" id="techPasswordMessage" role="status" aria-live="polite"></p>
           </form>
         </section>
+
+        <section class="panel" id="about-page" data-panel="about-page" hidden>
+          <div class="tech-about-shell">
+            <section class="tech-about-hero">
+              <p class="tech-about-kicker">ABOUT HOMEFIXSOLUTION</p>
+              <h1 class="panel-title tech-about-title">SYSTEM OVERVIEW</h1>
+              <p class="tech-about-copy">
+                HomeFixSolution is a service management platform for customer requests, technician assignment, scheduling, messaging, job tracking, and post-service ratings. The technician dashboard is the execution layer for handling assigned service operations.
+              </p>
+            </section>
+
+            <section class="tech-about-grid" aria-label="Technician about information">
+              <article class="tech-about-card">
+                <h2>Technician Role</h2>
+                <p>The technician role is to review service requests, accept qualified work, execute scheduled jobs, update request status, and complete service tasks according to the recorded job details.</p>
+              </article>
+              <article class="tech-about-card">
+                <h2>Customer Service Support</h2>
+                <p>Technicians support customers by validating service concerns, providing status visibility, delivering the requested work on schedule, and maintaining clear service communication through the platform.</p>
+              </article>
+              <article class="tech-about-card">
+                <h2>Service Workflow</h2>
+                <p>The standard workflow is request intake, technician acceptance, schedule execution, job completion, and customer rating. Each step is tracked through dashboard state and request updates.</p>
+              </article>
+              <article class="tech-about-card">
+                <h2>Communication Channel</h2>
+                <p>The messaging and status tools function as the technician-to-customer communication channel for coordination, progress reporting, and service clarification.</p>
+              </article>
+              <article class="tech-about-card">
+                <h2>Quality and Conduct</h2>
+                <p>Service quality is measured through task completion accuracy, schedule adherence, communication clarity, and customer feedback recorded after completed jobs.</p>
+              </article>
+              <article class="tech-about-card">
+                <h2>Ratings and Improvement</h2>
+                <p>Ratings provide a performance signal for technician reliability and service quality. They support review, accountability, and continuous improvement within the platform.</p>
+              </article>
+            </section>
+
+            <section class="tech-about-note-card">
+              <h2>Operational Importance</h2>
+              <p>
+                The technician role is operationally critical because customer requests are only resolved when assigned work is executed correctly, on time, and with proper status handling.
+              </p>
+            </section>
+
+            <section class="tech-about-note-card">
+              <h2>Using the Dashboard</h2>
+              <p>
+                The dashboard is used to manage pending jobs, active work, job history, ratings, schedule data, and technician account records in a single workflow interface.
+              </p>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
   </div>
@@ -341,16 +428,36 @@
     </div>
   </div>
 
+  <div class="tech-modal-backdrop" id="techActionConfirmModal" hidden>
+    <div class="tech-modal-card tech-confirm-card" role="dialog" aria-modal="true" aria-labelledby="techActionConfirmTitle" aria-describedby="techActionConfirmText">
+      <div class="tech-modal-head tech-confirm-head">
+        <div class="tech-confirm-header-copy">
+          <p class="tech-confirm-kicker" id="techActionConfirmKicker">Confirm Request Update</p>
+          <h2 id="techActionConfirmTitle">Confirm Action</h2>
+        </div>
+        <button type="button" class="tech-modal-close" id="techActionConfirmCloseBtn" aria-label="Close confirmation">✕</button>
+      </div>
+      <div class="tech-modal-body tech-confirm-body">
+        <p id="techActionConfirmText">Are you sure you want to continue?</p>
+        <p class="tech-confirm-detail" id="techActionConfirmDetail">This action will update the request status.</p>
+      </div>
+      <div class="tech-modal-actions tech-confirm-actions">
+        <button type="button" class="tech-view-btn" id="techActionConfirmCancelBtn">Cancel</button>
+        <button type="button" class="tech-action-btn tech-confirm-primary" id="techActionConfirmOkBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   <script src="../../firebase/config/firebase-config.js"></script>
   <script src="../../databasehfs/users/core.js?v=20260312a"></script>
-  <script src="../../databasehfs/users/user-profile-database.js?v=20260319c"></script>
+  <script src="../../databasehfs/users/user-profile-database.js?v=20260323g"></script>
   <script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
-  <script src="../../databasehfs/users/user-database.js"></script>
-  <script src="../../Js/technician/dashboard/parts/core.js?v=20260319b"></script>
-  <script src="../../Js/technician/dashboard/main.js?v=20260313g"></script>
+  <script src="../../databasehfs/users/user-database.js?v=20260323g"></script>
+  <script src="../../Js/technician/dashboard/parts/core.js?v=20260323i"></script>
+  <script src="../../Js/technician/dashboard/main.js?v=20260323l"></script>
 </body>
 </html>

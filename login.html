@@ -29,7 +29,7 @@
 
           <form id="loginForm" class="login-form" novalidate>
             <div class="input-wrapper">
-              <label class="input-label" for="email">Email address</label>
+              <label class="input-label" for="email">Email</label>
               <div class="field">
                 <span class="field-icon" aria-hidden="true">@</span>
                 <input id="email" class="input" type="text" placeholder="example@example.com" autocomplete="username" aria-label="email" aria-describedby="error-email">
@@ -39,14 +39,14 @@
 
             <div class="input-wrapper">
               <label class="input-label" for="password">Password</label>
-              <div class="field">
+              <div class="field password-field">
                 <span class="field-icon" aria-hidden="true">*</span>
                 <input id="password" class="input" type="password" placeholder="Enter your password" autocomplete="current-password" aria-label="password" aria-describedby="error-password">
                 <button type="button" class="password-toggle" data-target="#password" aria-label="Show password" aria-pressed="false">
                   <img src="images/icons/eye-closed.svg" alt="Show password">
                 </button>
               </div>
-              <a class="forgot-link" href="html/user/forgot-password.html">Forgot password?</a>
+              <a class="forgot-link" href="html/forgot-password.html">Forgot password?</a>
               <div class="error-message" id="error-password" role="alert" aria-live="assertive"></div>
             </div>
 
@@ -66,11 +66,11 @@
         <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"></script>
         <script src="firebase/config/firebase-config.js"></script>
         <script src="databasehfs/users/core.js?v=20260312a"></script>
-        <script src="databasehfs/users/user-profile-database.js?v=20260319c"></script>
+        <script src="databasehfs/users/user-profile-database.js?v=20260323g"></script>
         <script src="databasehfs/users/booking-database.js"></script>
-        <script src="databasehfs/users/user-database.js"></script>
+        <script src="databasehfs/users/user-database.js?v=20260323g"></script>
         <script src="Js/user/login/utils.js?v=20260319a"></script>
-        <script src="Js/user/login/submit.js?v=20260319b"></script>
+        <script src="Js/user/login/submit.js?v=20260323f"></script>
         <script src="Js/user/login/parts/core.js?v=20260319a"></script>
         <script src="Js/user/login/main.js?v=20260308c"></script>
       </section>

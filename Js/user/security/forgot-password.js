@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function setMessage(text, type) {
     if (!message) return;
     message.textContent = text || '';
+    message.hidden = !text;
     message.classList.remove('error', 'success');
     if (type) message.classList.add(type);
   }
@@ -29,17 +30,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function resolveResetUrl() {
+    const customPath = String(document.body && document.body.dataset && document.body.dataset.resetPath || '').trim();
+    const resetPath = customPath || '/html/user/reset-password.html';
     const config = window.HOMEFIX_FIREBASE_CONFIG || {};
     const authDomainRaw = String(config.authDomain || '').trim();
     if (authDomainRaw) {
       const host = authDomainRaw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
-      return `https://${host}/html/user/reset-password.html`;
+      return `https://${host}${resetPath}`;
     }
 
     try {
       const current = new URL(window.location.href);
       if (/^https?:$/i.test(current.protocol)) {
-        return `${current.origin}/html/user/reset-password.html`;
+        return `${current.origin}${resetPath}`;
       }
     } catch (_) {}
 

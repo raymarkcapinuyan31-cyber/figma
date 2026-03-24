@@ -44,6 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeProfile = null;
   let isEditing = false;
 
+  function normalizeText(value) {
+    return String(value == null ? '' : value).trim();
+  }
+
   function isPermissionDenied(error) {
     const code = String(error && error.code ? error.code : '').toLowerCase();
     const msg = String(error && error.message ? error.message : '').toLowerCase();
