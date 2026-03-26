@@ -437,6 +437,85 @@ document.addEventListener('DOMContentLoaded', () => {
     return `chats/${normalizeText(requestId)}`;
   }
 
+  function getLegacyChatPath(requestId) {
+    return `requestChats/${normalizeText(requestId)}`;
+  }
+
+  function mergeChatEntries(primaryEntries, legacyEntries) {
+    const mergedById = new Map();
+
+    function mergeOne(entry) {
+      if (!entry || typeof entry !== 'object') return;
+      const id = normalizeText(entry.id);
+      if (!id) return;
+      const existing = mergedById.get(id);
+      if (!existing) {
+        mergedById.set(id, entry);
+        return;
+      }
+      const existingTime = toTimeValue(existing && existing.createdAt);
+      const nextTime = toTimeValue(entry && entry.createdAt);
+      if (nextTime >= existingTime) {
+        mergedById.set(id, entry);
+      }
+    }
+
+    (Array.isArray(primaryEntries) ? primaryEntries : []).forEach(mergeOne);
+    (Array.isArray(legacyEntries) ? legacyEntries : []).forEach(mergeOne);
+
+    const entries = Array.from(mergedById.values());
+    entries.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    return entries;
+  }
+
+  function subscribeMergedChat(rtdb, requestId, onEntries, onError) {
+    const state = {
+      primary: [],
+      legacy: [],
+      primaryErrored: false,
+      legacyErrored: false
+    };
+
+    const emit = () => {
+      onEntries(mergeChatEntries(state.primary, state.legacy));
+    };
+
+    const primaryRef = rtdb.ref(getChatPath(requestId)).limitToLast(200);
+    const legacyRef = rtdb.ref(getLegacyChatPath(requestId)).limitToLast(200);
+
+    const makeOnValue = (key) => (snapshot) => {
+      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+      state[key] = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
+      emit();
+    };
+
+    const onPrimaryValue = makeOnValue('primary');
+    const onLegacyValue = makeOnValue('legacy');
+
+    const onPrimaryError = (error) => {
+      state.primaryErrored = true;
+      emit();
+      if (state.legacyErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+    const onLegacyError = (error) => {
+      state.legacyErrored = true;
+      emit();
+      if (state.primaryErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+
+    primaryRef.on('value', onPrimaryValue, onPrimaryError);
+    legacyRef.on('value', onLegacyValue, onLegacyError);
+
+    return () => {
+      primaryRef.off('value', onPrimaryValue);
+      legacyRef.off('value', onLegacyValue);
+    };
+  }
+
   function isImageMediaType(mediaType) {
     return normalizeText(mediaType).toLowerCase().startsWith('image/');
   }
@@ -731,7 +810,16 @@ document.addEventListener('DOMContentLoaded', () => {
           messagePayload.mediaDataUrl = normalizeText(attachment.mediaDataUrl);
         }
 
-        await rtdb.ref(getChatPath(requestId)).push(messagePayload);
+        const primaryRef = rtdb.ref(getChatPath(requestId)).push();
+        const messageId = primaryRef && primaryRef.key ? String(primaryRef.key).trim() : '';
+        await primaryRef.set(messagePayload);
+
+        if (messageId) {
+          try {
+            await rtdb.ref(`${getLegacyChatPath(requestId)}/${messageId}`).set(messagePayload);
+          } catch (_) {
+          }
+        }
 
         if (normalizeText(messagesInput.value) === text) {
           messagesInput.value = '';
@@ -752,12 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     sendMessageForActiveThread = sendMessage;
 
-    const ref = rtdb.ref(getChatPath(requestId)).limitToLast(200);
-    const onValue = (snapshot) => {
-      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
-      const entries = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
-      entries.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
-
+    const onValue = (entries) => {
       const inferredTechnicianName = inferTechnicianDisplayName(entries);
       if (inferredTechnicianName && technicianNameByRequestId[requestId] !== inferredTechnicianName) {
         technicianNameByRequestId[requestId] = inferredTechnicianName;
@@ -771,10 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
       messagesList.innerHTML = '<div class="messages-empty">Unable to load chat messages.</div>';
     };
 
-    ref.on('value', onValue, onError);
-    unsubscribeMessages = () => {
-      ref.off('value', onValue);
-    };
+    unsubscribeMessages = subscribeMergedChat(rtdb, requestId, onValue, onError);
 
     messagesForm.onsubmit = async (event) => {
       event.preventDefault();

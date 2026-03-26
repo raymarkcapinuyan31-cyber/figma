@@ -303,6 +303,7 @@
     createUserWithEmail: profile.createUserWithEmail.bind(profile),
     getUserById: profile.getUserById.bind(profile),
     getUserByEmail: profile.getUserByEmail.bind(profile),
+    subscribeUserProfile: profile.subscribeUserProfile.bind(profile),
     updateUserProfile: profile.updateUserProfile.bind(profile),
     saveAddress: profile.saveAddress.bind(profile),
     getAddresses: profile.getAddresses.bind(profile),

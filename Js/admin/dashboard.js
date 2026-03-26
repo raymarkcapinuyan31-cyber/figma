@@ -1,6 +1,12 @@
 (function () {
 	const ADMIN_DEMO_SESSION_KEY = 'hfs_admin_demo_session';
 	const ADMIN_DEMO_AUTH_KEY = 'hfs_admin_demo_firebase_auth_v1';
+	const ADMIN_RUNTIME_AUTH_KEY = 'hfs_admin_runtime_auth_v1';
+	const PENDING_ADMIN_INVITES_KEY = 'hfs_pending_admin_invites_v1';
+	const ADMIN_ACTIVE_SECTION_KEY = 'hfs_admin_active_section_v1';
+	const ADMIN_ACTIVE_SECTION_FILTER_KEY = 'hfs_admin_active_section_filter_v1';
+	const ADMIN_ACTIVE_REQUEST_FILTER_KEY = 'hfs_admin_active_request_filter_v1';
+	const ADMIN_FORCE_OVERVIEW_ONCE_KEY = 'hfs_admin_force_overview_once';
 	const FIREBASE_FUNCTIONS_REGION = 'asia-southeast1';
 	const usersDb = window.usersDatabase || window.homefixDB || null;
 	const FORCED_TECHNICIAN_EMAILS = ['kingsnever721@gmail.com'];
@@ -44,6 +50,10 @@
 	const REQUESTS_PAGE_SIZE = TABLE_PAGE_SIZE;
 	const REPORTS_PAGE_SIZE = TABLE_PAGE_SIZE;
 	const SESSION_LOGS_PAGE_SIZE = 10;
+	function getUsersDb() {
+		return window.usersDatabase || window.homefixDB || usersDb || null;
+	}
+
 	const state = {
 		accounts: [],
 		accountsPage: 1,
@@ -76,6 +86,7 @@
 	let pendingAccountActionResolver = null;
 	let technicianAggregateSyncInFlight = false;
 	let technicianAggregateSyncQueued = false;
+	let adminEmailVerificationWatcherId = null;
 
 	function readAdminSession() {
 		try {
@@ -101,6 +112,71 @@
 		}
 	}
 
+	function readAdminActiveSectionState() {
+		let section = 'overview';
+		let filter = '';
+		let requestFilter = '';
+		try {
+			section = normalizeLower(localStorage.getItem(ADMIN_ACTIVE_SECTION_KEY) || 'overview') || 'overview';
+			filter = normalizeLower(localStorage.getItem(ADMIN_ACTIVE_SECTION_FILTER_KEY) || '');
+			requestFilter = normalizeLower(localStorage.getItem(ADMIN_ACTIVE_REQUEST_FILTER_KEY) || '');
+		} catch (_) {
+		}
+		return { section, filter, requestFilter };
+	}
+
+	function writeAdminActiveSectionState(section, options = {}) {
+		const cleanSection = normalizeLower(section) || 'overview';
+		const cleanFilter = normalizeLower(options.filter || '');
+		const cleanRequestFilter = normalizeLower(options.requestFilter || '');
+		try {
+			localStorage.setItem(ADMIN_ACTIVE_SECTION_KEY, cleanSection);
+			localStorage.setItem(ADMIN_ACTIVE_SECTION_FILTER_KEY, cleanFilter);
+			localStorage.setItem(ADMIN_ACTIVE_REQUEST_FILTER_KEY, cleanRequestFilter);
+		} catch (_) {
+		}
+	}
+
+	function readAdminSectionHashState() {
+		const rawHash = String(window.location && window.location.hash ? window.location.hash : '').trim();
+		if (!rawHash || rawHash.length < 2) return null;
+		const hash = rawHash.charAt(0) === '#' ? rawHash.slice(1) : rawHash;
+		const params = new URLSearchParams(hash);
+		const section = normalizeLower(params.get('section') || '');
+		if (!section) return null;
+		return {
+			section,
+			filter: normalizeLower(params.get('filter') || ''),
+			requestFilter: normalizeLower(params.get('requestFilter') || '')
+		};
+	}
+
+	function writeAdminSectionHashState(section, options = {}) {
+		const cleanSection = normalizeLower(section);
+		if (!cleanSection) return;
+		const params = new URLSearchParams();
+		params.set('section', cleanSection);
+		const cleanFilter = normalizeLower(options.filter || '');
+		const cleanRequestFilter = normalizeLower(options.requestFilter || '');
+		if (cleanFilter) params.set('filter', cleanFilter);
+		if (cleanRequestFilter) params.set('requestFilter', cleanRequestFilter);
+		const nextHash = `#${params.toString()}`;
+		if (window.location.hash !== nextHash) {
+			history.replaceState(null, '', nextHash);
+		}
+	}
+
+	function consumeForceOverviewOnce() {
+		try {
+			if (sessionStorage.getItem(ADMIN_FORCE_OVERVIEW_ONCE_KEY) === '1') {
+				sessionStorage.removeItem(ADMIN_FORCE_OVERVIEW_ONCE_KEY);
+				return true;
+			}
+		} catch (_) {
+		}
+		return false;
+	}
+
 	function isDisposableDemoAdminEmail(value) {
 		const email = normalizeLower(value);
 		return /^admin\.demo\.[^@]+@homefixsolution\.app$/.test(email);
@@ -109,6 +185,34 @@
 	function clearStoredAdminAuth() {
 		try {
 			localStorage.removeItem(ADMIN_DEMO_AUTH_KEY);
+		} catch (_) {
+		}
+	}
+
+	function readDemoBootstrapAdminAuth() {
+		try {
+			const parsed = JSON.parse(localStorage.getItem(ADMIN_DEMO_AUTH_KEY) || '{}');
+			return {
+				email: normalizeLower(parsed && parsed.email),
+				password: normalizeText(parsed && parsed.password)
+			};
+		} catch (_) {
+			return {
+				email: '',
+				password: ''
+			};
+		}
+	}
+
+	function writeDemoBootstrapAdminAuth(email, password) {
+		const normalizedEmail = normalizeLower(email);
+		const normalizedPassword = normalizeText(password);
+		if (!normalizedEmail || !normalizedPassword) return;
+		try {
+			localStorage.setItem(ADMIN_DEMO_AUTH_KEY, JSON.stringify({
+				email: normalizedEmail,
+				password: normalizedPassword
+			}));
 		} catch (_) {
 		}
 	}
@@ -136,6 +240,128 @@
 		}
 	}
 
+	function readRuntimeAdminAuth() {
+		try {
+			const parsed = JSON.parse(sessionStorage.getItem(ADMIN_RUNTIME_AUTH_KEY) || '{}');
+			return {
+				email: normalizeLower(parsed && parsed.email),
+				password: normalizeText(parsed && parsed.password)
+			};
+		} catch (_) {
+			return {
+				email: '',
+				password: ''
+			};
+		}
+	}
+
+	function getAdminAuthCheckCredentials(email) {
+		const targetEmail = normalizeLower(email);
+		const pendingInvite = readPendingAdminInvite(targetEmail);
+		const runtime = readRuntimeAdminAuth();
+		const stored = readStoredAdminAuth();
+		const password = normalizeText((pendingInvite && pendingInvite.password) || runtime.password || stored.password);
+		const fallbackEmail = normalizeLower(runtime.email || stored.email);
+		const credentialEmail = targetEmail || fallbackEmail;
+		if (!credentialEmail || !password) {
+			return {
+				email: '',
+				password: ''
+			};
+		}
+		return {
+			email: credentialEmail,
+			password
+		};
+	}
+
+	async function activatePendingAdminAccount(email) {
+		const normalizedEmail = normalizeLower(email);
+		const pendingInvite = readPendingAdminInvite(normalizedEmail) || {};
+		const password = normalizeText(pendingInvite.password);
+		const pendingUid = normalizeText(pendingInvite.uid);
+		if (!normalizedEmail || !password) {
+			throw new Error('Pending admin credentials are missing. Send the verification link again.');
+		}
+		if (!usersDb || typeof usersDb.signInWithEmail !== 'function' || typeof usersDb.updateUserProfile !== 'function') {
+			throw new Error('Admin services are unavailable right now.');
+		}
+
+		const firstName = titleCaseName(pendingInvite.first_name) || 'Admin';
+		const lastName = titleCaseName(pendingInvite.last_name) || 'User';
+		const isActive = pendingInvite.isActive !== false;
+
+		if (pendingUid) {
+			await bootstrapPendingAdminRealtimeProfile(pendingUid, {
+				email: normalizedEmail,
+				first_name: firstName,
+				middle_name: '',
+				last_name: lastName,
+				role: 'admin',
+				isActive,
+				isVerified: true,
+				emailVerified: true,
+				updatedAt: Date.now()
+			});
+		}
+
+		try {
+			if (typeof usersDb.signOut === 'function') {
+				await usersDb.signOut();
+			}
+		} catch (_) {
+		}
+
+		const signedIn = await usersDb.signInWithEmail(normalizedEmail, password);
+		const authUser = getCurrentAdminAuthUser() || signedIn || await waitForCurrentAuthUser(1500);
+		const authUid = normalizeText(authUser && authUser.uid);
+		if (!authUser || !authUid) {
+			throw new Error('Could not open the verified admin account.');
+		}
+
+		if (typeof authUser.getIdToken === 'function') {
+			try {
+				await authUser.getIdToken(true);
+			} catch (_) {
+			}
+		}
+		if (typeof authUser.reload === 'function') {
+			try {
+				await authUser.reload();
+			} catch (_) {
+			}
+		}
+
+		const activeUser = getCurrentAdminAuthUser() || authUser;
+		if (!activeUser || !activeUser.emailVerified) {
+			throw new Error('Open the verification link for this email first, then click Save Email.');
+		}
+
+		removePendingAdminInvite(normalizedEmail);
+		writeStoredAdminAuth(normalizedEmail, password);
+		writeRuntimeAdminAuth(normalizedEmail, password);
+		writeAdminSession({
+			username: normalizedEmail,
+			email: normalizedEmail,
+			first_name: firstName,
+			firstName,
+			last_name: lastName,
+			lastName,
+			name: [firstName, lastName].filter(Boolean).join(' ').trim(),
+			uid: authUid,
+			role: 'admin',
+			source: 'firebase-login'
+		});
+
+		return {
+			authUser: activeUser,
+			authUid,
+			email: normalizedEmail,
+			firstName,
+			lastName
+		};
+	}
+
 	function writeStoredAdminAuth(email, password) {
 		const normalizedEmail = normalizeLower(email);
 		const normalizedPassword = normalizeText(password);
@@ -146,6 +372,19 @@
 		if (!normalizedEmail || !normalizedPassword) return;
 		try {
 			localStorage.setItem(ADMIN_DEMO_AUTH_KEY, JSON.stringify({
+				email: normalizedEmail,
+				password: normalizedPassword
+			}));
+		} catch (_) {
+		}
+	}
+
+	function writeRuntimeAdminAuth(email, password) {
+		const normalizedEmail = normalizeLower(email);
+		const normalizedPassword = normalizeText(password);
+		if (!normalizedEmail || !normalizedPassword) return;
+		try {
+			sessionStorage.setItem(ADMIN_RUNTIME_AUTH_KEY, JSON.stringify({
 				email: normalizedEmail,
 				password: normalizedPassword
 			}));
@@ -181,6 +420,149 @@
 		}));
 	}
 
+	function syncAdminSessionProfile(profile, email) {
+		const session = readAdminSession();
+		if (!session || typeof session !== 'object') return session;
+
+		const firstName = titleCaseName(profile && profile.first_name);
+		const lastName = titleCaseName(profile && profile.last_name);
+		const normalizedEmail = normalizeLower(email || session.email || session.username);
+		const displayName = [firstName, lastName].filter(Boolean).join(' ').trim();
+		const nextSession = Object.assign({}, session, {
+			email: normalizedEmail || session.email,
+			username: normalizedEmail || session.username
+		});
+
+		if (firstName) {
+			nextSession.first_name = firstName;
+			nextSession.firstName = firstName;
+		}
+		if (lastName) {
+			nextSession.last_name = lastName;
+			nextSession.lastName = lastName;
+		}
+		if (displayName) {
+			nextSession.name = displayName;
+		}
+
+		writeAdminSession(nextSession);
+		return nextSession;
+	}
+
+	function readPendingAdminInvites() {
+		try {
+			const parsed = JSON.parse(localStorage.getItem(PENDING_ADMIN_INVITES_KEY) || '{}');
+			return parsed && typeof parsed === 'object' ? parsed : {};
+		} catch (_) {
+			return {};
+		}
+	}
+
+	function writePendingAdminInvite(email, profile) {
+		const normalizedEmail = normalizeLower(email);
+		if (!normalizedEmail) return;
+		const invites = readPendingAdminInvites();
+		invites[normalizedEmail] = Object.assign({}, invites[normalizedEmail] || {}, profile || {}, {
+			email: normalizedEmail,
+			updatedAt: Date.now()
+		});
+		try {
+			localStorage.setItem(PENDING_ADMIN_INVITES_KEY, JSON.stringify(invites));
+		} catch (_) {
+		}
+	}
+
+	function readPendingAdminInvite(email) {
+		const normalizedEmail = normalizeLower(email);
+		if (!normalizedEmail) return null;
+		const invites = readPendingAdminInvites();
+		const item = invites[normalizedEmail];
+		return item && typeof item === 'object' ? item : null;
+	}
+
+	function removePendingAdminInvite(email) {
+		const normalizedEmail = normalizeLower(email);
+		if (!normalizedEmail) return;
+		const invites = readPendingAdminInvites();
+		if (!Object.prototype.hasOwnProperty.call(invites, normalizedEmail)) return;
+		delete invites[normalizedEmail];
+		try {
+			localStorage.setItem(PENDING_ADMIN_INVITES_KEY, JSON.stringify(invites));
+		} catch (_) {
+		}
+	}
+
+	async function bootstrapPendingAdminRealtimeProfile(uid, payload) {
+		const cleanUid = normalizeText(uid);
+		const nextPayload = Object.assign({}, payload || {}, {
+			uid: cleanUid,
+			role: 'admin',
+			email: normalizeLower(payload && payload.email),
+			updatedAt: Date.now()
+		});
+		if (!cleanUid) return false;
+
+		try {
+			await upsertAdminProfileWithFunction(nextPayload);
+			return true;
+		} catch (_) {
+			try {
+				await syncAccountAccessStateWithFirebaseAuth(cleanUid, nextPayload.email, 'admin', true);
+			} catch (_) {
+			}
+		}
+
+		const session = readAdminSession();
+		if (normalizeLower(session && session.source) === 'demo') {
+			await ensureDemoAdminFirebaseAuth(session).catch(() => false);
+		}
+
+		const runtimeAuth = readRuntimeAdminAuth();
+		const storedAuth = readStoredAdminAuth();
+		const demoBootstrapAuth = readDemoBootstrapAdminAuth();
+		const demoAuth = normalizeLower(session && session.source) === 'demo'
+			? demoBootstrapAuth
+			: (isDisposableDemoAdminEmail(runtimeAuth.email) ? runtimeAuth : storedAuth);
+		const demoEmail = normalizeLower(demoAuth && demoAuth.email);
+		const demoPassword = normalizeText(demoAuth && demoAuth.password);
+		const config = getFirebaseConfig();
+		if (!config || !window.firebase || typeof window.firebase.initializeApp !== 'function' || !isDisposableDemoAdminEmail(demoEmail) || !demoPassword) {
+			return false;
+		}
+
+		const appName = `hfs-admin-status-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+		const secondaryApp = window.firebase.initializeApp(config, appName);
+		const secondaryAuth = secondaryApp.auth();
+		const secondaryDb = secondaryApp.database();
+
+		try {
+			await secondaryAuth.signInWithEmailAndPassword(demoEmail, demoPassword);
+			await secondaryDb.ref(`admins/${cleanUid}`).update(nextPayload);
+			try {
+				await secondaryDb.ref(`users/${cleanUid}`).remove();
+			} catch (_) {
+			}
+			try {
+				await secondaryDb.ref(`customers/${cleanUid}`).remove();
+			} catch (_) {
+			}
+			try {
+				await secondaryDb.ref(`technicians/${cleanUid}`).remove();
+			} catch (_) {
+			}
+			return true;
+		} finally {
+			try {
+				await secondaryAuth.signOut();
+			} catch (_) {
+			}
+			try {
+				await secondaryApp.delete();
+			} catch (_) {
+			}
+		}
+	}
+
 	function getFunctionsBaseUrl() {
 		const config = window.HOMEFIX_FIREBASE_CONFIG || {};
 		const projectId = normalizeText(config.projectId);
@@ -188,7 +570,23 @@
 		return `https://${FIREBASE_FUNCTIONS_REGION}-${projectId}.cloudfunctions.net`;
 	}
 
+	function isLocalDevHost() {
+		const host = normalizeLower(window && window.location ? window.location.hostname : '');
+		return host === 'localhost' || host === '127.0.0.1';
+	}
+
 	async function syncAccountAccessStateWithFirebaseAuth(userId, email, role, shouldEnable) {
+		if (isLocalDevHost()) {
+			return {
+				ok: true,
+				localDevBypass: true,
+				disabled: !shouldEnable,
+				uid: normalizeText(userId),
+				email: normalizeLower(email),
+				role: normalizeLower(role)
+			};
+		}
+
 		const authUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
 		if (!authUser || typeof authUser.getIdToken !== 'function') {
 			throw new Error('Admin authentication is unavailable.');
@@ -221,23 +619,77 @@
 		return payload;
 	}
 
+	async function upsertAdminProfileWithFunction(profile) {
+		const authUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
+		if (!authUser || typeof authUser.getIdToken !== 'function') {
+			throw new Error('Admin authentication is unavailable.');
+		}
+
+		const baseUrl = getFunctionsBaseUrl();
+		if (!baseUrl) {
+			throw new Error('Firebase Functions is not configured.');
+		}
+
+		const requestBody = {
+			uid: normalizeText(profile && profile.uid),
+			email: normalizeLower(profile && profile.email),
+			first_name: titleCaseName(profile && profile.first_name),
+			middle_name: normalizeText(profile && profile.middle_name),
+			last_name: titleCaseName(profile && profile.last_name),
+			isActive: profile && Object.prototype.hasOwnProperty.call(profile, 'isActive') ? profile.isActive !== false : true,
+			isVerified: profile && Object.prototype.hasOwnProperty.call(profile, 'isVerified') ? profile.isVerified !== false : true,
+			emailVerified: profile && Object.prototype.hasOwnProperty.call(profile, 'emailVerified') ? profile.emailVerified !== false : true
+		};
+
+		const response = await fetch(`${baseUrl}/upsertAdminProfile`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${await authUser.getIdToken(true)}`
+			},
+			body: JSON.stringify(requestBody)
+		});
+
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok || !payload || payload.ok !== true) {
+			throw new Error(normalizeText(payload && payload.message) || 'Failed to upsert admin profile.');
+		}
+
+		return payload.profile || requestBody;
+	}
+
 	async function ensureDemoAdminFirebaseAuth(session) {
 		const role = normalizeLower(session && session.role);
 		if (role && role !== 'admin') return true;
 
-		if (!usersDb || typeof usersDb.signInWithEmail !== 'function') return false;
-		let currentUser = usersDb.auth && usersDb.auth.currentUser ? usersDb.auth.currentUser : null;
+		const db = getUsersDb();
+		if (!db || typeof db.signInWithEmail !== 'function') return false;
+		const rawSessionEmail = normalizeLower(session && (session.email || session.username));
+		const sessionEmail = rawSessionEmail.includes('@') ? rawSessionEmail : '';
+		const isDemoSession = normalizeLower(session && session.source) === 'demo';
+		let currentUser = db.auth && db.auth.currentUser ? db.auth.currentUser : null;
 		const ensureAdminProfile = async (authUser) => {
-			if (!authUser || !authUser.uid || !usersDb || typeof usersDb.updateUserProfile !== 'function') return;
+			if (!authUser || !authUser.uid || !db || typeof db.updateUserProfile !== 'function') return;
+			let existingProfile = null;
+			if (typeof db.getUserById === 'function') {
+				try {
+					existingProfile = await db.getUserById(authUser.uid);
+				} catch (_) {
+					existingProfile = null;
+				}
+			}
+
+			const existingFirstName = titleCaseName(existingProfile && existingProfile.first_name);
+			const existingLastName = titleCaseName(existingProfile && existingProfile.last_name);
 			try {
-				await usersDb.updateUserProfile(authUser.uid, {
+				await db.updateUserProfile(authUser.uid, {
 					uid: authUser.uid,
 					email: normalizeLower(authUser.email || ''),
-					first_name: 'Admin',
+					first_name: existingFirstName || 'Admin',
 					middle_name: '',
-					last_name: 'User',
+					last_name: existingLastName || 'User',
 					role: 'admin',
-					isActive: true,
+					isActive: existingProfile && Object.prototype.hasOwnProperty.call(existingProfile, 'isActive') ? existingProfile.isActive !== false : true,
 					isVerified: !!authUser.emailVerified,
 					emailVerified: !!authUser.emailVerified,
 					updatedAt: Date.now()
@@ -246,11 +698,34 @@
 			}
 		};
 
-		if (currentUser && isDisposableDemoAdminEmail(currentUser.email)) {
+		const isCurrentUserUsable = async (authUser) => {
+			if (!authUser || !authUser.uid) return false;
+			const authEmail = normalizeLower(authUser.email || '');
+			if (!isDemoSession && sessionEmail && authEmail && sessionEmail !== authEmail) return false;
+			if (!db || typeof db.getUserById !== 'function') return !!authEmail;
+			try {
+				const profile = await db.getUserById(authUser.uid);
+				return normalizeLower(profile && profile.role) === 'admin';
+			} catch (_) {
+				return !!authEmail && (isDemoSession || !sessionEmail || authEmail === sessionEmail);
+			}
+		};
+
+		if (currentUser && isDisposableDemoAdminEmail(currentUser.email) && !isDemoSession) {
 			clearStoredAdminAuth();
 			try {
-				if (typeof usersDb.signOut === 'function') {
-					await usersDb.signOut();
+				if (typeof db.signOut === 'function') {
+					await db.signOut();
+				}
+			} catch (_) {
+			}
+			currentUser = null;
+		}
+
+		if (currentUser && !(await isCurrentUserUsable(currentUser))) {
+			try {
+				if (typeof db.signOut === 'function') {
+					await db.signOut();
 				}
 			} catch (_) {
 			}
@@ -262,18 +737,68 @@
 			return true;
 		}
 
-		const storedAdminAuth = readStoredAdminAuth();
+		const runtimeAdminAuth = readRuntimeAdminAuth();
+		const demoBootstrapAuth = readDemoBootstrapAdminAuth();
+		const storedAdminAuth = isDemoSession
+			? (demoBootstrapAuth.email && demoBootstrapAuth.password
+				? demoBootstrapAuth
+				: (runtimeAdminAuth.email && runtimeAdminAuth.password ? runtimeAdminAuth : readStoredAdminAuth()))
+			: (runtimeAdminAuth.email && runtimeAdminAuth.password ? runtimeAdminAuth : readStoredAdminAuth());
 		const savedEmail = storedAdminAuth.email;
 		const savedPassword = storedAdminAuth.password;
 
 		if (savedEmail && savedPassword) {
 			try {
-				await usersDb.signInWithEmail(savedEmail, savedPassword);
-				await ensureAdminProfile(usersDb.auth && usersDb.auth.currentUser ? usersDb.auth.currentUser : null);
+				await db.signInWithEmail(savedEmail, savedPassword);
+				writeStoredAdminAuth(savedEmail, savedPassword);
+				writeRuntimeAdminAuth(savedEmail, savedPassword);
+				await waitForCurrentAuthUser(1200);
+				const signedInUser = db.auth && db.auth.currentUser ? db.auth.currentUser : null;
+				if (!signedInUser || !(await isCurrentUserUsable(signedInUser))) {
+					throw new Error('Admin auth restore failed.');
+				}
+				await ensureAdminProfile(signedInUser);
 				return true;
-			} catch (_) {
-				clearStoredAdminAuth();
+			} catch (error) {
+				const code = normalizeLower(error && error.code);
+				if (code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-login-credentials') {
+					clearStoredAdminAuth();
+				}
 			}
+		}
+
+		if (isDemoSession && db.auth && typeof db.auth.createUserWithEmailAndPassword === 'function') {
+			const demoEmail = `admin.demo.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}@homefixsolution.app`;
+			const candidates = buildAdminDemoPasswordCandidates();
+			let createdUser = null;
+			let selectedPassword = '';
+			let lastError = null;
+
+			for (let index = 0; index < candidates.length; index += 1) {
+				const candidate = normalizeText(candidates[index]);
+				if (!candidate) continue;
+				try {
+					const credential = await db.auth.createUserWithEmailAndPassword(demoEmail, candidate);
+					createdUser = credential && credential.user ? credential.user : null;
+					selectedPassword = candidate;
+					break;
+				} catch (error) {
+					lastError = error;
+					const code = normalizeLower(error && error.code);
+					const weakPassword = code.includes('weak-password') || code.includes('password-does-not-meet-requirements');
+					if (!weakPassword) throw error;
+				}
+			}
+
+			if (!createdUser || !selectedPassword) {
+				if (lastError) throw lastError;
+				return false;
+			}
+
+			writeDemoBootstrapAdminAuth(demoEmail, selectedPassword);
+			writeRuntimeAdminAuth(demoEmail, selectedPassword);
+			await ensureAdminProfile(createdUser);
+			return true;
 		}
 
 		return false;
@@ -467,6 +992,20 @@
 		const filter = normalizeLower(typeFilter || 'all');
 		if (filter !== 'technician' && filter !== 'concern') return reports;
 		return reports.filter((item) => getReportCategory(item) === filter);
+	}
+
+	function getReportCustomerName(item) {
+		const customerId = normalizeText(item && item.customerId);
+		const customerEmail = normalizeLower(item && item.customerEmail);
+		const profile = findAccountByUidOrEmail(customerId, customerEmail, 'customer')
+			|| findAccountByUidOrEmail(customerId, customerEmail, '');
+
+		if (profile) {
+			const fullName = getAccountFullName(profile) || getProfileName(profile);
+			if (fullName) return fullName;
+		}
+
+		return normalizeText(item && item.customerName) || normalizeText(item && item.customerEmail) || normalizeText(item && item.customerId) || '-';
 	}
 
 	function getSessionUid(item) {
@@ -665,6 +1204,7 @@
 		stopSessionPresenceTracking();
 		const rtdb = getRealtimeDatabase();
 		if (!rtdb) return;
+		const SESSION_PRESENCE_LOG_LIMIT = 300;
 
 		const streams = {
 			loginCustomers: [],
@@ -672,6 +1212,7 @@
 			loginTechnicians: [],
 			logoutTechnicians: []
 		};
+		let recomputeTimer = null;
 
 		const recomputePresence = () => {
 			const loginMap = {};
@@ -733,19 +1274,34 @@
 			renderAccountsTable();
 		};
 
+		const scheduleRecomputePresence = () => {
+			if (recomputeTimer) return;
+			recomputeTimer = setTimeout(() => {
+				recomputeTimer = null;
+				recomputePresence();
+			}, 80);
+		};
+
+		unsubscribeSessionPresence.push(() => {
+			if (recomputeTimer) {
+				clearTimeout(recomputeTimer);
+				recomputeTimer = null;
+			}
+		});
+
 		const watchPath = (path, streamKey) => {
-			const ref = rtdb.ref(path).limitToLast(1000);
+			const ref = rtdb.ref(path).limitToLast(SESSION_PRESENCE_LOG_LIMIT);
 			const success = (snapshot) => {
 				const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
 				streams[streamKey] = Object.keys(value).map((id) => {
 					const data = value[id] && typeof value[id] === 'object' ? value[id] : {};
 					return Object.assign({ id }, data);
 				});
-				recomputePresence();
+				scheduleRecomputePresence();
 			};
 			const failure = () => {
 				streams[streamKey] = [];
-				recomputePresence();
+				scheduleRecomputePresence();
 			};
 
 			ref.on('value', success, failure);
@@ -1162,6 +1718,103 @@
 			} catch (_) {
 			}
 		}
+	}
+
+	async function provisionAdminAuth(email, initialPassword) {
+		if (!window.firebase || typeof window.firebase.initializeApp !== 'function') {
+			const error = new Error('Firebase Auth is unavailable.');
+			error.code = 'auth/unavailable';
+			throw error;
+		}
+
+		const config = getFirebaseConfig();
+		if (!config) {
+			const error = new Error('Firebase config is missing.');
+			error.code = 'auth/config-missing';
+			throw error;
+		}
+
+		const appName = `hfs-admin-provision-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+		const secondaryApp = window.firebase.initializeApp(config, appName);
+		const secondaryAuth = secondaryApp.auth();
+
+		try {
+			const credential = await secondaryAuth.createUserWithEmailAndPassword(email, initialPassword);
+			const createdUser = credential && credential.user ? credential.user : null;
+			if (!createdUser || typeof createdUser.sendEmailVerification !== 'function') {
+				const error = new Error('Admin verification email is unavailable right now.');
+				error.code = 'auth/unavailable';
+				throw error;
+			}
+			await createdUser.sendEmailVerification();
+			await secondaryAuth.signOut();
+			return createdUser;
+		} finally {
+			try {
+				await secondaryApp.delete();
+			} catch (_) {
+			}
+		}
+	}
+
+	async function resendPendingAdminVerification(email, password) {
+		const normalizedEmail = normalizeLower(email);
+		const rawPassword = normalizeText(password);
+		if (!normalizedEmail || !rawPassword) {
+			const error = new Error('Pending admin verification could not be resent because the account credentials are missing.');
+			error.code = 'auth/missing-credentials';
+			throw error;
+		}
+
+		if (!window.firebase || typeof window.firebase.initializeApp !== 'function') {
+			const error = new Error('Firebase Auth is unavailable.');
+			error.code = 'auth/unavailable';
+			throw error;
+		}
+
+		const config = getFirebaseConfig();
+		if (!config) {
+			const error = new Error('Firebase config is missing.');
+			error.code = 'auth/config-missing';
+			throw error;
+		}
+
+		const appName = `hfs-admin-resend-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+		const secondaryApp = window.firebase.initializeApp(config, appName);
+		const secondaryAuth = secondaryApp.auth();
+
+		try {
+			const credential = await secondaryAuth.signInWithEmailAndPassword(normalizedEmail, rawPassword);
+			const authUser = credential && credential.user ? credential.user : secondaryAuth.currentUser;
+			if (!authUser || typeof authUser.sendEmailVerification !== 'function') {
+				const error = new Error('Admin verification email is unavailable right now.');
+				error.code = 'auth/unavailable';
+				throw error;
+			}
+			await authUser.sendEmailVerification();
+			return authUser;
+		} finally {
+			try {
+				await secondaryAuth.signOut();
+			} catch (_) {
+			}
+			try {
+				await secondaryApp.delete();
+			} catch (_) {
+			}
+		}
+	}
+
+	async function sendAdminSetupLink(email) {
+		const normalizedEmail = normalizeLower(email);
+		if (!normalizedEmail) {
+			const error = new Error('Invalid admin email.');
+			error.code = 'auth/invalid-email';
+			throw error;
+		}
+		const error = new Error('Admin verification link can only be sent while creating a new admin email account.');
+		error.code = 'auth/operation-not-allowed';
+		throw error;
 	}
 
 	async function saveTechnicianProfileAsSelf(email, password, payload) {
@@ -1832,25 +2485,26 @@
 	}
 
 	function getCurrentAdminAuthUser() {
-		return usersDb && usersDb.auth && usersDb.auth.currentUser ? usersDb.auth.currentUser : null;
+		const db = getUsersDb();
+		return db && db.auth && db.auth.currentUser ? db.auth.currentUser : null;
 	}
 
 	function formatAdminDisplayName(profile, session, emailFallback) {
 		const firstName = titleCaseName(profile && profile.first_name);
-		const lastName = titleCaseName(profile && profile.last_name);
-		const fullName = `${firstName} ${lastName}`.trim();
-		if (fullName) return fullName;
 		if (firstName) return firstName;
 
-		const sessionName = normalizeText(session && session.username);
-		if (sessionName) return sessionName;
+		const sessionFirstName = titleCaseName(
+			(session && (session.first_name || session.firstName))
+			|| normalizeText(session && session.name).split(/\s+/)[0]
+		);
+		if (sessionFirstName) return sessionFirstName;
 
-		const normalizedEmail = normalizeLower(emailFallback);
+		const normalizedEmail = normalizeLower((session && (session.email || session.username)) || emailFallback);
 		if (normalizedEmail.includes('@')) {
-			return normalizedEmail.split('@')[0];
+			return titleCaseName(normalizedEmail.split('@')[0].split(/[._-]+/)[0]);
 		}
 
-		return 'admin';
+		return 'Admin';
 	}
 
 	function updateAdminSessionGreeting(profile, session, emailFallback) {
@@ -1867,50 +2521,223 @@
 			emailInput: document.getElementById('adminSettingsEmail'),
 			firstNameInput: document.getElementById('adminFirstName'),
 			lastNameInput: document.getElementById('adminLastName'),
+			editEmailButton: document.getElementById('editAdminEmailBtn'),
 			sendButton: document.getElementById('sendAdminVerificationBtn'),
-			editButton: document.getElementById('editAdminProfileBtn'),
+			editNameButton: document.getElementById('editAdminNameBtn'),
+			emailSaveButton: document.getElementById('saveAdminEmailBtn'),
 			saveButton: document.getElementById('saveAdminProfileBtn')
 		};
+	}
+
+	function setAdminProfileSavedEmail(email) {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		const normalizedEmail = normalizeLower(email);
+		elements.form.dataset.savedEmail = normalizedEmail;
+		elements.form.dataset.pendingEmail = normalizedEmail;
+	}
+
+	function setAdminProfilePendingEmail(email) {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		elements.form.dataset.pendingEmail = normalizeLower(email);
+	}
+
+	function shouldWatchAdminEmailVerification() {
+		const elements = getAdminProfileElements();
+		if (!elements) return false;
+		const isEmailEditing = elements.form.dataset.emailEditing === 'true';
+		const savedEmail = normalizeLower(elements.form.dataset.savedEmail);
+		const pendingEmail = normalizeLower(elements.form.dataset.pendingEmail);
+		const draftEmail = normalizeLower(elements.emailInput && elements.emailInput.value);
+		if (!isEmailEditing) return false;
+		if (!pendingEmail || pendingEmail === savedEmail) return false;
+		if (!draftEmail || draftEmail !== pendingEmail) return false;
+		return elements.form.dataset.emailVerified !== 'true';
+	}
+
+	async function checkAdminEmailVerificationViaSecondaryAuth(expectedEmail) {
+		const targetEmail = normalizeLower(expectedEmail);
+		const credentials = getAdminAuthCheckCredentials(targetEmail);
+		const config = getFirebaseConfig();
+		if (!targetEmail || !credentials.password || !window.firebase || typeof window.firebase.initializeApp !== 'function' || !config) {
+			return null;
+		}
+
+		const appName = `hfs-admin-verify-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+		const secondaryApp = window.firebase.initializeApp(config, appName);
+		const secondaryAuth = secondaryApp.auth();
+
+		try {
+			const credential = await secondaryAuth.signInWithEmailAndPassword(targetEmail, credentials.password);
+			const signedInUser = credential && credential.user ? credential.user : secondaryAuth.currentUser;
+			if (signedInUser && typeof signedInUser.reload === 'function') {
+				await signedInUser.reload();
+			}
+
+			const activeUser = secondaryAuth.currentUser || signedInUser;
+			return {
+				authUser: activeUser,
+				email: normalizeLower(activeUser && activeUser.email),
+				emailVerified: !!(activeUser && activeUser.emailVerified)
+			};
+		} catch (_) {
+			return null;
+		} finally {
+			try {
+				await secondaryAuth.signOut();
+			} catch (_) {
+			}
+			try {
+				await secondaryApp.delete();
+			} catch (_) {
+			}
+		}
+	}
+
+	async function checkAdminEmailVerificationListener() {
+		if (!shouldWatchAdminEmailVerification()) return;
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		const draftEmail = normalizeLower(elements.emailInput && elements.emailInput.value);
+		const pendingEmail = normalizeLower(elements.form.dataset.pendingEmail) || draftEmail;
+		const refreshed = await refreshAdminEmailVerificationState(pendingEmail);
+		const verifiedEmail = normalizeLower(refreshed && refreshed.email);
+		if (refreshed && refreshed.emailVerified && draftEmail && draftEmail === verifiedEmail) {
+			setSettingsMessage('adminProfileMessage', 'Email verified. You can now save it.', 'success');
+			stopAdminEmailVerificationListener();
+		}
+	}
+
+	function stopAdminEmailVerificationListener() {
+		if (adminEmailVerificationWatcherId) {
+			clearInterval(adminEmailVerificationWatcherId);
+			adminEmailVerificationWatcherId = null;
+		}
+	}
+
+	function startAdminEmailVerificationListener() {
+		stopAdminEmailVerificationListener();
+		if (!shouldWatchAdminEmailVerification()) return;
+		adminEmailVerificationWatcherId = window.setInterval(() => {
+			checkAdminEmailVerificationListener().catch(() => {});
+		}, 3000);
+	}
+
+	function setAdminProfileSavedNames(firstName, lastName) {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		elements.form.dataset.savedFirstName = titleCaseName(firstName);
+		elements.form.dataset.savedLastName = titleCaseName(lastName);
 	}
 
 	function syncAdminProfileActionState() {
 		const elements = getAdminProfileElements();
 		if (!elements) return;
 
-		const isEditing = elements.form.dataset.editing === 'true';
+		const isEmailEditing = elements.form.dataset.emailEditing === 'true';
+		const isNameEditing = elements.form.dataset.nameEditing === 'true';
 		const savedEmail = normalizeLower(elements.form.dataset.savedEmail);
+		const pendingEmail = normalizeLower(elements.form.dataset.pendingEmail) || savedEmail;
+		const savedFirstName = titleCaseName(elements.form.dataset.savedFirstName);
+		const savedLastName = titleCaseName(elements.form.dataset.savedLastName);
 		const draftEmail = normalizeLower(elements.emailInput && elements.emailInput.value);
+		const draftFirstName = titleCaseName(elements.firstNameInput && elements.firstNameInput.value);
+		const draftLastName = titleCaseName(elements.lastNameInput && elements.lastNameInput.value);
 		const isVerified = elements.form.dataset.emailVerified === 'true';
 		const emailChanged = !!draftEmail && draftEmail !== savedEmail;
 		const emailError = validateAdminEmail(draftEmail);
+		const firstNameError = validateCustomerStyleName(draftFirstName, true, 'First Name');
+		const lastNameError = validateCustomerStyleName(draftLastName, true, 'Last Name');
+		const namesChanged = draftFirstName !== savedFirstName || draftLastName !== savedLastName;
+		const canSaveEmail = isEmailEditing
+			&& !emailError
+			&& !!draftEmail
+			&& draftEmail === pendingEmail
+			&& draftEmail !== savedEmail
+			&& isVerified;
+
+		if (elements.editEmailButton) {
+			elements.editEmailButton.textContent = isEmailEditing ? 'Cancel Email' : 'Edit Email';
+		}
+
+		if (elements.editNameButton) {
+			elements.editNameButton.textContent = isNameEditing ? 'Cancel Name' : 'Edit Name';
+		}
 
 		if (elements.sendButton) {
-			elements.sendButton.hidden = !isEditing;
-			elements.sendButton.disabled = !isEditing || !!emailError || (!emailChanged && isVerified);
+			elements.sendButton.hidden = !isEmailEditing;
+			elements.sendButton.disabled = !isEmailEditing || !!emailError || (!emailChanged && isVerified && pendingEmail === savedEmail);
+		}
+
+		if (elements.emailSaveButton) {
+			elements.emailSaveButton.hidden = !isEmailEditing;
+			elements.emailSaveButton.disabled = !canSaveEmail;
 		}
 
 		if (elements.saveButton) {
-			elements.saveButton.disabled = !isEditing || !isVerified || emailChanged;
+			elements.saveButton.disabled = !isNameEditing || !!firstNameError || !!lastNameError || !namesChanged;
 		}
 	}
 
-	function setAdminProfileEditingState(isEditing) {
+	function setAdminEmailEditingState(isEditing) {
 		const elements = getAdminProfileElements();
 		if (!elements) return;
 
 		const editing = !!isEditing;
-		elements.form.dataset.editing = editing ? 'true' : 'false';
-		[elements.emailInput, elements.firstNameInput, elements.lastNameInput].forEach((input) => {
+		elements.form.dataset.emailEditing = editing ? 'true' : 'false';
+		if (elements.emailInput) {
+			elements.emailInput.readOnly = !editing;
+			elements.emailInput.classList.toggle('is-locked', !editing);
+		}
+		if (!editing) {
+			stopAdminEmailVerificationListener();
+		}
+		syncAdminProfileActionState();
+	}
+
+	function setAdminNameEditingState(isEditing) {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+
+		const editing = !!isEditing;
+		elements.form.dataset.nameEditing = editing ? 'true' : 'false';
+		[elements.firstNameInput, elements.lastNameInput].forEach((input) => {
 			if (!input) return;
 			input.readOnly = !editing;
 			input.classList.toggle('is-locked', !editing);
 		});
-
-		if (elements.editButton) {
-			elements.editButton.textContent = editing ? 'Cancel Edit' : 'Edit Profile';
-		}
-
 		syncAdminProfileActionState();
+	}
+
+	function setAdminProfileEditingState(isEditing) {
+		setAdminEmailEditingState(isEditing);
+		setAdminNameEditingState(isEditing);
+	}
+
+	function resetAdminEmailSection() {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		if (elements.emailInput) {
+			elements.emailInput.value = normalizeLower(elements.form.dataset.savedEmail);
+		}
+		setInputInvalidState(elements.emailInput, false);
+		setAdminProfileVerificationState(elements.form.dataset.emailVerified === 'true', elements.form.dataset.savedEmail);
+		setAdminEmailEditingState(false);
+	}
+
+	function resetAdminNameSection() {
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+		if (elements.firstNameInput) {
+			elements.firstNameInput.value = titleCaseName(elements.form.dataset.savedFirstName);
+		}
+		if (elements.lastNameInput) {
+			elements.lastNameInput.value = titleCaseName(elements.form.dataset.savedLastName);
+		}
+		setInputInvalidState(elements.firstNameInput, false);
+		setInputInvalidState(elements.lastNameInput, false);
+		setAdminNameEditingState(false);
 	}
 
 	function setAdminProfileVerificationState(isVerified, email) {
@@ -1918,27 +2745,29 @@
 		if (!elements) return;
 
 		elements.form.dataset.emailVerified = isVerified ? 'true' : 'false';
-		elements.form.dataset.savedEmail = normalizeLower(email);
+		setAdminProfilePendingEmail(email);
 		setAdminEmailVerificationStatus(isVerified, email);
 		syncAdminProfileActionState();
+		if (isVerified) {
+			stopAdminEmailVerificationListener();
+		} else {
+			startAdminEmailVerificationListener();
+		}
 	}
 
 	function setAdminEmailVerificationStatus(isVerified, email) {
 		const element = document.getElementById('adminEmailVerificationStatus');
-		if (!element) return;
-		element.classList.remove('error', 'verified');
-		const normalizedEmail = normalizeLower(email);
-		if (isVerified) {
+		if (element) {
+			element.classList.remove('error', 'verified', 'pending');
+			element.textContent = 'Verified';
 			element.hidden = false;
-			element.textContent = normalizedEmail
-				? `Email has been verified for ${normalizedEmail}.`
-				: 'Email has been verified.';
-			element.classList.add('verified');
+		}
+		if (isVerified) {
+			if (element) {
+				element.classList.add('verified');
+			}
 			return;
 		}
-
-		element.textContent = '';
-		element.hidden = true;
 	}
 
 	function setSettingsMessage(elementId, message, tone) {
@@ -1954,16 +2783,64 @@
 	function setInputInvalidState(input, isInvalid) {
 		if (!input) return;
 		input.classList.toggle('invalid', !!isInvalid);
+		if (isInvalid) {
+			input.classList.remove('valid');
+		}
+	}
+
+	function setInputValidState(input, isValid) {
+		if (!input) return;
+		input.classList.toggle('valid', !!isValid);
+		if (isValid) {
+			input.classList.remove('invalid');
+		}
 	}
 
 	function validateAdminPassword(value) {
 		const password = String(value || '');
 		if (!password) return 'New password is required.';
-		if (password.length < 8 || password.length > 24) return 'Use 8 to 24 characters.';
+		if (password.length < 8 || password.length > 12) return 'Use 8 to 12 characters.';
+		if (/\s/.test(password)) return 'Spaces are not allowed.';
 		if (!/[A-Z]/.test(password)) return 'Include at least one uppercase letter.';
 		if (!/[a-z]/.test(password)) return 'Include at least one lowercase letter.';
 		if (!/\d/.test(password)) return 'Include at least one number.';
+		if (!/[^\w\s]/.test(password)) return 'Include at least one special character.';
 		return null;
+	}
+
+	function syncAdminPasswordValidationState() {
+		const newPasswordInput = document.getElementById('adminNewPassword');
+		const confirmPasswordInput = document.getElementById('adminConfirmPassword');
+		if (!newPasswordInput || !confirmPasswordInput) return;
+		const ruleLength = document.getElementById('adminPasswordRuleLength');
+		const ruleLower = document.getElementById('adminPasswordRuleLower');
+		const ruleUpper = document.getElementById('adminPasswordRuleUpper');
+		const ruleDigit = document.getElementById('adminPasswordRuleDigit');
+		const ruleSpecial = document.getElementById('adminPasswordRuleSpecial');
+
+		const newPassword = String(newPasswordInput.value || '');
+		const confirmPassword = String(confirmPasswordInput.value || '');
+		const passwordError = newPassword ? validateAdminPassword(newPassword) : null;
+		const checks = {
+			length: newPassword.length >= 8 && newPassword.length <= 12,
+			lower: /[a-z]/.test(newPassword),
+			upper: /[A-Z]/.test(newPassword),
+			digit: /\d/.test(newPassword),
+			special: /[^\w\s]/.test(newPassword)
+		};
+
+		if (ruleLength) ruleLength.classList.toggle('met', checks.length);
+		if (ruleLower) ruleLower.classList.toggle('met', checks.lower);
+		if (ruleUpper) ruleUpper.classList.toggle('met', checks.upper);
+		if (ruleDigit) ruleDigit.classList.toggle('met', checks.digit);
+		if (ruleSpecial) ruleSpecial.classList.toggle('met', checks.special);
+
+		setInputValidState(newPasswordInput, !!newPassword && !passwordError);
+		if (!newPassword) setInputInvalidState(newPasswordInput, false);
+
+		const confirmMatches = !!confirmPassword && !passwordError && newPassword === confirmPassword;
+		setInputValidState(confirmPasswordInput, confirmMatches);
+		if (!confirmPassword) setInputInvalidState(confirmPasswordInput, false);
 	}
 
 	function bindPasswordToggleButtons() {
@@ -1997,11 +2874,11 @@
 		return null;
 	}
 
-	async function reauthenticateAdminForSensitiveChange(email) {
+	async function reauthenticateAdminForSensitiveChange(email, passwordInputValue) {
 		const authUser = getCurrentAdminAuthUser();
 		const stored = readStoredAdminAuth();
 		const normalizedEmail = normalizeLower(email || stored.email || (authUser && authUser.email));
-		const password = normalizeText(stored.password);
+		const password = normalizeText(passwordInputValue || stored.password);
 		const emailProvider = usersDb && usersDb.firebase && usersDb.firebase.auth && usersDb.firebase.auth.EmailAuthProvider
 			? usersDb.firebase.auth.EmailAuthProvider
 			: (window.firebase && window.firebase.auth && window.firebase.auth.EmailAuthProvider ? window.firebase.auth.EmailAuthProvider : null);
@@ -2022,10 +2899,15 @@
 		const session = readAdminSession();
 		let authUser = getCurrentAdminAuthUser();
 		if (!authUser) {
+			await ensureDemoAdminFirebaseAuth(session);
+			authUser = getCurrentAdminAuthUser();
+		}
+		if (!authUser) {
 			authUser = await waitForCurrentAuthUser(1500);
 		}
 
-		const authUid = normalizeText(authUser && authUser.uid);
+		let authUid = normalizeText(authUser && authUser.uid) || normalizeText(session && session.uid);
+		const sessionEmail = normalizeLower((session && (session.email || session.username)) || '');
 		let profile = null;
 		if (authUid && usersDb && typeof usersDb.getUserById === 'function') {
 			try {
@@ -2035,14 +2917,35 @@
 			}
 		}
 
+		if ((!profile || normalizeLower(profile && profile.role) !== 'admin') && sessionEmail && usersDb && typeof usersDb.getUserByEmail === 'function') {
+			try {
+				const byEmail = await usersDb.getUserByEmail(sessionEmail);
+				if (normalizeLower(byEmail && byEmail.role) === 'admin') {
+					profile = byEmail;
+					if (!authUid) {
+						authUid = normalizeText(byEmail && (byEmail.uid || byEmail.id));
+					}
+				}
+			} catch (_) {
+			}
+		}
+
+		const trustedProfile = normalizeLower(profile && profile.role) === 'admin'
+			? profile
+			: null;
+
+		if (!authUid && trustedProfile) {
+			authUid = normalizeText(trustedProfile.uid || trustedProfile.id);
+		}
+
 		const authEmail = normalizeLower(
-			(profile && profile.email)
-			|| (authUser && authUser.email)
-			|| (session && session.username)
+			(authUser && authUser.email)
+			|| (trustedProfile && trustedProfile.email)
+			|| sessionEmail
 		);
 		const emailVerified = !!(
 			(authUser && authUser.emailVerified)
-			|| (profile && profile.emailVerified)
+			|| (trustedProfile && trustedProfile.emailVerified)
 		);
 
 		return {
@@ -2051,8 +2954,53 @@
 			authUid,
 			authEmail,
 			emailVerified,
-			profile
+			profile: trustedProfile
 		};
+	}
+
+	async function ensureVerifiedPendingAdminProfile(context) {
+		const info = context && typeof context === 'object' ? context : {};
+		const db = getUsersDb();
+		const authUser = info.authUser || getCurrentAdminAuthUser();
+		const authUid = normalizeText(info.authUid || (authUser && authUser.uid));
+		const authEmail = normalizeLower(info.authEmail || (authUser && authUser.email));
+		const profile = info.profile && typeof info.profile === 'object' ? info.profile : null;
+
+		if (!db || typeof db.updateUserProfile !== 'function' || !authUser || !authUid || !authEmail) return info;
+		if (profile && normalizeLower(profile.role) === 'admin') return info;
+		if (!authUser.emailVerified) return info;
+
+		const pendingInvite = readPendingAdminInvite(authEmail);
+		if (!pendingInvite) return info;
+
+		await db.updateUserProfile(authUid, {
+			uid: authUid,
+			email: authEmail,
+			first_name: String(pendingInvite.first_name || 'Admin').trim(),
+			middle_name: '',
+			last_name: String(pendingInvite.last_name || 'User').trim(),
+			role: 'admin',
+			isActive: pendingInvite.isActive !== false,
+			isVerified: true,
+			emailVerified: true,
+			updatedAt: Date.now()
+		}).catch(() => {});
+
+		removePendingAdminInvite(authEmail);
+
+		let nextProfile = null;
+		try {
+			nextProfile = await db.getUserById(authUid);
+		} catch (_) {
+			nextProfile = null;
+		}
+
+		return Object.assign({}, info, {
+			authUid,
+			authEmail,
+			emailVerified: true,
+			profile: nextProfile && normalizeLower(nextProfile.role) === 'admin' ? nextProfile : info.profile
+		});
 	}
 
 	function populateAdminSettingsForm(context) {
@@ -2062,6 +3010,10 @@
 		const emailValue = authEmail || normalizeLower(profile && profile.email);
 		const firstName = titleCaseName(profile && profile.first_name) || 'Admin';
 		const lastName = titleCaseName(profile && profile.last_name) || 'User';
+		const resolvedProfile = Object.assign({}, profile, {
+			first_name: firstName,
+			last_name: lastName
+		});
 
 		const adminSettingsEmail = document.getElementById('adminSettingsEmail');
 		const adminFirstName = document.getElementById('adminFirstName');
@@ -2070,13 +3022,18 @@
 		if (adminSettingsEmail) adminSettingsEmail.value = emailValue;
 		if (adminFirstName) adminFirstName.value = firstName;
 		if (adminLastName) adminLastName.value = lastName;
+		setAdminProfileSavedEmail(emailValue);
+		setAdminProfileSavedNames(firstName, lastName);
 		setAdminProfileVerificationState(!!info.emailVerified, emailValue);
-		setAdminProfileEditingState(false);
+		setAdminEmailEditingState(false);
+		setAdminNameEditingState(false);
 
-		updateAdminSessionGreeting(profile, info.session, emailValue);
+		const syncedSession = syncAdminSessionProfile(resolvedProfile, emailValue) || info.session;
+		updateAdminSessionGreeting(resolvedProfile, syncedSession, emailValue);
 	}
 
-	async function refreshAdminEmailVerificationState() {
+	async function refreshAdminEmailVerificationState(expectedEmail) {
+		const targetEmail = normalizeLower(expectedEmail);
 		let authUser = getCurrentAdminAuthUser();
 		if (!authUser) {
 			authUser = await waitForCurrentAuthUser(1500);
@@ -2089,10 +3046,20 @@
 			}
 		}
 
-		const activeUser = getCurrentAdminAuthUser() || authUser;
-		const email = normalizeLower(activeUser && activeUser.email);
-		const emailVerified = !!(activeUser && activeUser.emailVerified);
-		setAdminProfileVerificationState(emailVerified, email);
+		let activeUser = getCurrentAdminAuthUser() || authUser;
+		let email = normalizeLower(activeUser && activeUser.email);
+		let emailVerified = !!(activeUser && activeUser.emailVerified);
+
+		if (targetEmail && (!emailVerified || email !== targetEmail)) {
+			const secondaryState = await checkAdminEmailVerificationViaSecondaryAuth(targetEmail);
+			if (secondaryState && secondaryState.email === targetEmail) {
+				activeUser = activeUser || secondaryState.authUser;
+				email = secondaryState.email;
+				emailVerified = !!secondaryState.emailVerified;
+			}
+		}
+
+		setAdminProfileVerificationState(emailVerified && (!targetEmail || email === targetEmail), targetEmail || email);
 
 		return {
 			authUser: activeUser,
@@ -2106,13 +3073,18 @@
 
 		const elements = getAdminProfileElements();
 		if (!elements) return;
+		const db = getUsersDb();
+		const session = readAdminSession();
+		const isDemoSession = normalizeLower(session && session.source) === 'demo';
 
 		const email = normalizeLower(elements.emailInput && elements.emailInput.value);
+		const firstName = titleCaseName(elements.firstNameInput && elements.firstNameInput.value) || 'Admin';
+		const lastName = titleCaseName(elements.lastNameInput && elements.lastNameInput.value) || 'User';
 		setInputInvalidState(elements.emailInput, false);
 		setSettingsMessage('adminProfileMessage', '');
 
-		if (elements.form.dataset.editing !== 'true') {
-			setSettingsMessage('adminProfileMessage', 'Click Edit Profile first before changing the admin details.', 'error');
+		if (elements.form.dataset.emailEditing !== 'true') {
+			setSettingsMessage('adminProfileMessage', 'Click Edit Email first before changing the admin email.', 'error');
 			return;
 		}
 
@@ -2123,19 +3095,113 @@
 			return;
 		}
 
+		if (!db) {
+			setSettingsMessage('adminProfileMessage', 'Admin services are still loading. Refresh the page and try again.', 'error');
+			return;
+		}
+
+		if (isDemoSession) {
+			if (elements.sendButton) {
+				elements.sendButton.disabled = true;
+				elements.sendButton.textContent = 'Sending...';
+			}
+
+			try {
+				let existing = null;
+				const pendingInvite = readPendingAdminInvite(email);
+				let generatedPassword = normalizeText(pendingInvite && pendingInvite.password);
+				let pendingAuthUid = normalizeText(pendingInvite && pendingInvite.uid);
+				if (typeof db.getUserByEmail === 'function') {
+					existing = await db.getUserByEmail(email).catch(() => null);
+				}
+
+				const existingUid = normalizeText(existing && (existing.uid || existing.id));
+				const existingRole = normalizeLower(existing && existing.role);
+
+				if (existingUid && existingRole && existingRole !== 'admin') {
+					setInputInvalidState(elements.emailInput, true);
+					setSettingsMessage('adminProfileMessage', 'That email is already being used by another account.', 'error');
+					return;
+				}
+
+				if (!existingUid) {
+					generatedPassword = generatedPassword || generateTechnicianPassword();
+					try {
+						const authUser = await provisionAdminAuth(email, generatedPassword);
+						if (!normalizeText(authUser && authUser.uid)) {
+							throw new Error('Unable to create the admin email account right now.');
+						}
+						pendingAuthUid = normalizeText(authUser && authUser.uid);
+					} catch (error) {
+						const code = normalizeLower(error && error.code);
+						if (code === 'auth/email-already-in-use' && generatedPassword) {
+							const authUser = await resendPendingAdminVerification(email, generatedPassword);
+							pendingAuthUid = normalizeText(authUser && authUser.uid) || pendingAuthUid;
+						} else if (code !== 'auth/email-already-in-use') {
+							throw error;
+						} else {
+							throw new Error('This admin email already exists in Firebase Authentication, but its verification link cannot be resent from this device. Use the same email setup flow again after logging in with that admin account, or choose a different email.');
+						}
+					}
+				} else if (generatedPassword) {
+					const authUser = await resendPendingAdminVerification(email, generatedPassword);
+					pendingAuthUid = normalizeText(authUser && authUser.uid) || pendingAuthUid || existingUid;
+				}
+
+				writePendingAdminInvite(email, {
+					uid: pendingAuthUid || existingUid,
+					first_name: firstName,
+					last_name: lastName,
+					role: 'admin',
+					password: generatedPassword,
+					pending: true,
+					createdAt: Date.now()
+				});
+
+				setAdminProfileVerificationState(false, email);
+				setSettingsMessage('adminProfileMessage', 'A link has been sent to the email.', 'success');
+				startAdminEmailVerificationListener();
+				return;
+			} catch (error) {
+				setSettingsMessage('adminProfileMessage', normalizeText(error && error.message) || 'Failed to send admin setup email.', 'error');
+				return;
+			} finally {
+				if (elements.sendButton) {
+					elements.sendButton.textContent = 'Send Verification';
+					syncAdminProfileActionState();
+				}
+			}
+		}
+
+		let authUser = getCurrentAdminAuthUser();
+		if (!authUser) {
+			await ensureDemoAdminFirebaseAuth(session);
+			authUser = getCurrentAdminAuthUser() || await waitForCurrentAuthUser(400);
+		}
+		if (!authUser) {
+			setSettingsMessage('adminProfileMessage', 'Admin authentication expired. Log out and sign in again before sending verification email.', 'error');
+			return;
+		}
+
 		const context = await getAdminProfileContext();
-		if (!context.authUid || !usersDb || typeof usersDb.updateUserProfile !== 'function') {
+		if (!context.authUid && authUser && authUser.uid) {
+			context.authUid = normalizeText(authUser.uid);
+		}
+		if (!context.authUid) {
+			setSettingsMessage('adminProfileMessage', 'Admin account data is missing. Log out and sign in again.', 'error');
+			return;
+		}
+		if (typeof db.updateUserProfile !== 'function') {
 			setSettingsMessage('adminProfileMessage', 'Admin profile is unavailable right now.', 'error');
 			return;
 		}
 
-		const authUser = context.authUser || getCurrentAdminAuthUser();
 		const currentEmail = normalizeLower((authUser && authUser.email) || context.authEmail || (context.profile && context.profile.email));
 		const isEmailChanged = email && email !== currentEmail;
 
-		if (isEmailChanged && usersDb && typeof usersDb.getUserByEmail === 'function') {
+		if (isEmailChanged && typeof db.getUserByEmail === 'function') {
 			try {
-				const existing = await usersDb.getUserByEmail(email);
+				const existing = await db.getUserByEmail(email);
 				const existingUid = normalizeText(existing && (existing.uid || existing.id));
 				if (existingUid && existingUid !== context.authUid) {
 					setInputInvalidState(elements.emailInput, true);
@@ -2199,7 +3265,7 @@
 				return;
 			}
 
-			await usersDb.updateUserProfile(context.authUid, {
+			await db.updateUserProfile(context.authUid, {
 				uid: context.authUid,
 				email,
 				role: 'admin',
@@ -2212,6 +3278,7 @@
 
 			setAdminProfileVerificationState(false, email);
 			setSettingsMessage('adminProfileMessage', 'Verification email sent. Verify the admin email first before saving profile changes.', 'success');
+			startAdminEmailVerificationListener();
 		} catch (error) {
 			setSettingsMessage('adminProfileMessage', normalizeText(error && error.message) || 'Failed to send verification email.', 'error');
 		} finally {
@@ -2234,7 +3301,7 @@
 	}
 
 	async function loadAdminSettings() {
-		const context = await getAdminProfileContext();
+		const context = await ensureVerifiedPendingAdminProfile(await getAdminProfileContext());
 		populateAdminSettingsForm(context);
 		return context;
 	}
@@ -2249,7 +3316,6 @@
 		const firstNameInput = elements.firstNameInput;
 		const lastNameInput = elements.lastNameInput;
 		const submitButton = elements.saveButton;
-		const email = normalizeLower(emailInput && emailInput.value);
 		const firstName = normalizeText(firstNameInput && firstNameInput.value);
 		const lastName = normalizeText(lastNameInput && lastNameInput.value);
 
@@ -2258,20 +3324,13 @@
 		setInputInvalidState(lastNameInput, false);
 		setSettingsMessage('adminProfileMessage', '');
 
-		if (elements.form.dataset.editing !== 'true') {
-			setSettingsMessage('adminProfileMessage', 'Click Edit Profile first before saving admin changes.', 'error');
+		if (elements.form.dataset.nameEditing !== 'true') {
+			setSettingsMessage('adminProfileMessage', 'Click Edit Name first before saving admin name changes.', 'error');
 			return;
 		}
 
-		const emailError = validateAdminEmail(email);
 		const firstNameError = validateCustomerStyleName(firstName, true, 'First Name');
 		const lastNameError = validateCustomerStyleName(lastName, true, 'Last Name');
-
-		if (emailError) {
-			setInputInvalidState(emailInput, true);
-			setSettingsMessage('adminProfileMessage', emailError, 'error');
-			return;
-		}
 
 		if (firstNameError) {
 			setInputInvalidState(firstNameInput, true);
@@ -2285,17 +3344,13 @@
 			return;
 		}
 
-		const context = await getAdminProfileContext();
+		const context = await ensureVerifiedPendingAdminProfile(await getAdminProfileContext());
+		const savedEmail = normalizeLower(elements.form.dataset.savedEmail || context.authEmail || (context.profile && context.profile.email));
+		const pendingEmail = normalizeLower(elements.form.dataset.pendingEmail || savedEmail || (emailInput && emailInput.value));
+		const pendingInvite = readPendingAdminInvite(pendingEmail);
+
 		if (!context.authUid || !usersDb || typeof usersDb.updateUserProfile !== 'function') {
 			setSettingsMessage('adminProfileMessage', 'Admin profile is unavailable right now.', 'error');
-			return;
-		}
-
-		const savedEmail = normalizeLower(elements.form.dataset.savedEmail || context.authEmail || (context.profile && context.profile.email));
-		if (email !== savedEmail) {
-			setInputInvalidState(emailInput, true);
-			setSettingsMessage('adminProfileMessage', 'Send verification for the new admin email first before saving profile changes.', 'error');
-			syncAdminProfileActionState();
 			return;
 		}
 
@@ -2304,37 +3359,171 @@
 			submitButton.textContent = 'Saving...';
 		}
 
+		let savedSuccessfully = false;
+
 		try {
-			const refreshedVerification = await refreshAdminEmailVerificationState();
-			const authUser = refreshedVerification.authUser || context.authUser || getCurrentAdminAuthUser();
-			const emailVerified = !!refreshedVerification.emailVerified;
-
-			if (!emailVerified) {
-				setSettingsMessage('adminProfileMessage', 'Verify the admin email first before saving profile changes.', 'error');
-				return;
-			}
-
 			await usersDb.updateUserProfile(context.authUid, {
 				uid: context.authUid,
-				email,
+				email: savedEmail || pendingEmail,
 				first_name: firstName,
 				middle_name: '',
 				last_name: lastName,
 				role: 'admin',
 				isActive: true,
-				isVerified: emailVerified,
-				emailVerified: emailVerified,
+				isVerified: elements.form.dataset.emailVerified === 'true',
+				emailVerified: elements.form.dataset.emailVerified === 'true',
 				updatedAt: Date.now()
 			});
+
+			setAdminProfileSavedNames(firstName, lastName);
+			const syncedSession = syncAdminSessionProfile({ first_name: firstName, last_name: lastName }, savedEmail || pendingEmail) || context.session;
+			updateAdminSessionGreeting({ first_name: firstName, last_name: lastName }, syncedSession, savedEmail || pendingEmail);
+			setSettingsMessage('adminProfileMessage', 'Admin name saved successfully.', 'success');
+			savedSuccessfully = true;
+		} catch (error) {
+			setSettingsMessage('adminProfileMessage', normalizeText(error && error.message) || 'Failed to save admin name.', 'error');
+		} finally {
+			if (savedSuccessfully) {
+				setAdminNameEditingState(false);
+			}
+			if (submitButton) {
+				submitButton.textContent = 'Save Name';
+				syncAdminProfileActionState();
+			}
+		}
+	}
+
+	async function saveAdminEmail(event) {
+		if (event) event.preventDefault();
+
+		const elements = getAdminProfileElements();
+		if (!elements) return;
+
+		const emailInput = elements.emailInput;
+		const submitButton = elements.emailSaveButton;
+		const email = normalizeLower(emailInput && emailInput.value);
+		const savedEmail = normalizeLower(elements.form.dataset.savedEmail);
+		const pendingEmail = normalizeLower(elements.form.dataset.pendingEmail) || savedEmail;
+
+		setInputInvalidState(emailInput, false);
+		setSettingsMessage('adminProfileMessage', '');
+
+		if (elements.form.dataset.emailEditing !== 'true') {
+			setSettingsMessage('adminProfileMessage', 'Click Edit Email first before saving the admin email.', 'error');
+			return;
+		}
+
+		const emailError = validateAdminEmail(email);
+		if (emailError) {
+			setInputInvalidState(emailInput, true);
+			setSettingsMessage('adminProfileMessage', emailError, 'error');
+			return;
+		}
+
+		if (email === savedEmail) {
+			setSettingsMessage('adminProfileMessage', 'This email is already saved.', 'success');
+			syncAdminProfileActionState();
+			return;
+		}
+
+		if (email !== pendingEmail) {
+			setInputInvalidState(emailInput, true);
+			setSettingsMessage('adminProfileMessage', 'Send verification for this email first, then click Save Email.', 'error');
+			syncAdminProfileActionState();
+			return;
+		}
+
+		let context = await ensureVerifiedPendingAdminProfile(await getAdminProfileContext());
+		const session = readAdminSession();
+		const isDemoSession = normalizeLower(session && session.source) === 'demo';
+		const pendingInvite = readPendingAdminInvite(email);
+		if ((!context.authUid || !usersDb || typeof usersDb.updateUserProfile !== 'function') && !(isDemoSession && pendingInvite)) {
+			setSettingsMessage('adminProfileMessage', 'Admin profile is unavailable right now.', 'error');
+			return;
+		}
+
+		if (submitButton) {
+			submitButton.disabled = true;
+			submitButton.textContent = 'Saving...';
+		}
+
+		let savedSuccessfully = false;
+
+		try {
+			const refreshedVerification = await refreshAdminEmailVerificationState(email);
+			const authUser = refreshedVerification.authUser || context.authUser || getCurrentAdminAuthUser();
+			const verifiedEmail = normalizeLower(refreshedVerification.email || (authUser && authUser.email));
+
+			if (!refreshedVerification.emailVerified || verifiedEmail !== email) {
+				setInputInvalidState(emailInput, true);
+				setSettingsMessage('adminProfileMessage', 'Open the verification link for this email first, then click Save Email.', 'error');
+				startAdminEmailVerificationListener();
+				return;
+			}
+
+			if (isDemoSession && pendingInvite) {
+				const activated = await activatePendingAdminAccount(email);
+				context = Object.assign({}, context, {
+					authUid: activated.authUid,
+					authUser: activated.authUser,
+					authEmail: activated.email
+				});
+				setAdminProfileSavedEmail(activated.email);
+				setAdminProfileSavedNames(activated.firstName, activated.lastName);
+				setAdminProfileVerificationState(true, activated.email);
+				const syncedSession = syncAdminSessionProfile({ first_name: activated.firstName, last_name: activated.lastName }, activated.email) || readAdminSession();
+				updateAdminSessionGreeting({ first_name: activated.firstName, last_name: activated.lastName }, syncedSession, activated.email);
+				setSettingsMessage('adminProfileMessage', 'Admin email saved successfully.', 'success');
+				savedSuccessfully = true;
+				return;
+			}
+
+			const savedFirstName = titleCaseName(elements.form.dataset.savedFirstName || (context.profile && context.profile.first_name) || elements.firstNameInput.value || 'Admin');
+			const savedLastName = titleCaseName(elements.form.dataset.savedLastName || (context.profile && context.profile.last_name) || elements.lastNameInput.value || 'User');
+
+			try {
+				await upsertAdminProfileWithFunction({
+					uid: context.authUid,
+					email,
+					first_name: savedFirstName,
+					middle_name: '',
+					last_name: savedLastName,
+					isActive: context.profile && context.profile.isActive === false ? false : true,
+					isVerified: true,
+					emailVerified: true,
+					updatedAt: Date.now()
+				});
+			} catch (_) {
+				await usersDb.updateUserProfile(context.authUid, {
+					uid: context.authUid,
+					email,
+					first_name: savedFirstName,
+					middle_name: '',
+					last_name: savedLastName,
+					role: 'admin',
+					isActive: context.profile && context.profile.isActive === false ? false : true,
+					isVerified: true,
+					emailVerified: true,
+					updatedAt: Date.now()
+				});
+			}
 			await ensureAdminRealtimeAccess(authUser || getCurrentAdminAuthUser());
 
-			await loadAdminSettings();
-			setSettingsMessage('adminProfileMessage', 'Admin profile updated successfully.', 'success');
+			setAdminProfileSavedEmail(email);
+			setAdminProfileSavedNames(savedFirstName, savedLastName);
+			setAdminProfileVerificationState(true, email);
+			const syncedSession = syncAdminSessionProfile({ first_name: savedFirstName, last_name: savedLastName }, email) || context.session;
+			updateAdminSessionGreeting({ first_name: savedFirstName, last_name: savedLastName }, syncedSession, email);
+			setSettingsMessage('adminProfileMessage', 'Admin email saved successfully.', 'success');
+			savedSuccessfully = true;
 		} catch (error) {
-			setSettingsMessage('adminProfileMessage', normalizeText(error && error.message) || 'Failed to update admin profile.', 'error');
+			setSettingsMessage('adminProfileMessage', normalizeText(error && error.message) || 'Failed to save admin email.', 'error');
 		} finally {
+			if (savedSuccessfully) {
+				setAdminEmailEditingState(false);
+			}
 			if (submitButton) {
-				submitButton.textContent = 'Save Profile';
+				submitButton.textContent = 'Save Email';
 				syncAdminProfileActionState();
 			}
 		}
@@ -2343,15 +3532,27 @@
 	async function saveAdminPassword(event) {
 		if (event) event.preventDefault();
 
+		const currentPasswordInput = document.getElementById('adminCurrentPassword');
 		const newPasswordInput = document.getElementById('adminNewPassword');
 		const confirmPasswordInput = document.getElementById('adminConfirmPassword');
 		const submitButton = document.getElementById('saveAdminPasswordBtn');
+		const currentPassword = String(currentPasswordInput && currentPasswordInput.value || '');
 		const newPassword = String(newPasswordInput && newPasswordInput.value || '');
 		const confirmPassword = String(confirmPasswordInput && confirmPasswordInput.value || '');
 
+		setInputInvalidState(currentPasswordInput, false);
 		setInputInvalidState(newPasswordInput, false);
 		setInputInvalidState(confirmPasswordInput, false);
+		setInputValidState(currentPasswordInput, false);
+		setInputValidState(newPasswordInput, false);
+		setInputValidState(confirmPasswordInput, false);
 		setSettingsMessage('adminPasswordMessage', '');
+
+		if (!normalizeText(currentPassword)) {
+			setInputInvalidState(currentPasswordInput, true);
+			setSettingsMessage('adminPasswordMessage', 'Current password is required.', 'error');
+			return;
+		}
 
 		const passwordError = validateAdminPassword(newPassword);
 		if (passwordError) {
@@ -2376,6 +3577,16 @@
 			return;
 		}
 
+		const didReauthenticate = await reauthenticateAdminForSensitiveChange(
+			normalizeLower(context.authEmail || (authUser && authUser.email)),
+			currentPassword
+		);
+		if (!didReauthenticate) {
+			setInputInvalidState(currentPasswordInput, true);
+			setSettingsMessage('adminPasswordMessage', 'Current password is incorrect.', 'error');
+			return;
+		}
+
 		if (submitButton) {
 			submitButton.disabled = true;
 			submitButton.textContent = 'Updating...';
@@ -2384,9 +3595,11 @@
 		try {
 			await authUser.updatePassword(newPassword);
 			writeStoredAdminAuth(context.authEmail || authUser.email, newPassword);
+			if (currentPasswordInput) currentPasswordInput.value = '';
 			if (newPasswordInput) newPasswordInput.value = '';
 			if (confirmPasswordInput) confirmPasswordInput.value = '';
-			setSettingsMessage('adminPasswordMessage', 'Admin password updated successfully.', 'success');
+			syncAdminPasswordValidationState();
+			setSettingsMessage('adminPasswordMessage', 'Admin password changed successfully.', 'success');
 		} catch (error) {
 			if (hasErrorCode(error, 'requires-recent-login')) {
 				try {
@@ -2407,7 +3620,7 @@
 		} finally {
 			if (submitButton) {
 				submitButton.disabled = false;
-				submitButton.textContent = 'Update Password';
+				submitButton.textContent = 'Change Password';
 			}
 		}
 	}
@@ -2746,6 +3959,15 @@
 		});
 	}
 
+	function getAccountRolePriority(role) {
+		const normalizedRole = normalizeLower(role);
+		if (normalizedRole === 'admin') return 4;
+		if (normalizedRole === 'technician') return 3;
+		if (normalizedRole === 'customer') return 2;
+		if (normalizedRole) return 1;
+		return 0;
+	}
+
 	function getFilteredAccounts(accounts) {
 		const filter = normalizeLower(state.accountRoleFilter || 'all');
 		const roleFiltered = filter === 'all'
@@ -2956,7 +4178,7 @@
 		tableBody.innerHTML = pagination.items.map((item) => {
 			const reportCategory = getReportCategory(item);
 			const requestCode = normalizeText(item && (item.requestCode || item.requestId || item.bookingCode || item.bookingId)) || '-';
-			const customerName = normalizeText(item && item.customerName) || normalizeText(item && item.customerEmail) || normalizeText(item && item.customerId) || '-';
+			const customerName = getReportCustomerName(item);
 			const technicianId = reportCategory === 'concern'
 				? '-'
 				: formatTechnicianReference(
@@ -3160,16 +4382,19 @@
 
 			await ensureAdminRealtimeAccess(activeAuthUser);
 
-			let functionSynced = false;
-			let functionError = null;
 			try {
 				await syncAccountAccessStateWithFirebaseAuth(id, email, role, shouldEnable);
-				functionSynced = true;
 			} catch (error) {
-				functionError = error;
+				const errorMessage = normalizeText(error && error.message);
+				const isFetchFailure = normalizeLower(errorMessage).includes('failed to fetch');
+				const fallbackMessage = isFetchFailure
+					? 'Failed to reach Firebase Functions (CORS/network). Deploy updated functions and retry so disable/enable is synced to Firebase Auth for mobile and web.'
+					: (shouldEnable
+						? 'Failed to sync Firebase Auth while enabling this account. Please retry so mobile and web login access stay consistent.'
+						: 'Failed to sync Firebase Auth while disabling this account. Please retry so mobile users are logged out and blocked from sign-in.');
+				throw new Error(errorMessage || fallbackMessage);
 			}
 
-			let updated = false;
 			if (usersDb && typeof usersDb.updateUserProfile === 'function') {
 				try {
 					await usersDb.updateUserProfile(id, {
@@ -3177,16 +4402,11 @@
 						isActive: !!shouldEnable,
 						updatedAt: Date.now()
 					});
-					updated = true;
 				} catch (_) {
 				}
 			}
 
 			await updateAccountActiveStateInRealtime(id, shouldEnable, role, email);
-
-			if (!functionSynced && functionError && !updated) {
-				throw functionError;
-			}
 		} catch (error) {
 			if (triggerButton) triggerButton.disabled = false;
 			window.alert(normalizeText(error && error.message) || 'Failed to update account status. Deploy Firebase Functions and check admin permissions.');
@@ -3672,7 +4892,8 @@
 		await loadRequests();
 	}
 
-	async function loadAccounts() {
+	async function loadAccounts(options) {
+		const allowReauthRetry = !options || options.allowReauthRetry !== false;
 		const tableBody = document.getElementById('accountsTableBody');
 		if (!tableBody) return;
 		setTablePagination('accountsPageIndicator', 'accountsPrevPageBtn', 'accountsNextPageBtn', 1, 1);
@@ -3691,34 +4912,102 @@
 			const usersRef = rtdb.ref('users');
 			const cache = { admins: {}, customers: {}, technicians: {}, users: {} };
 			const errors = { admins: null, customers: null, technicians: null, users: null };
+			let retryTriggered = false;
+
+			const retryAfterReauth = async () => {
+				if (!allowReauthRetry || retryTriggered) return;
+				retryTriggered = true;
+				if (typeof unsubscribeAccounts === 'function') {
+					unsubscribeAccounts();
+					unsubscribeAccounts = null;
+				}
+
+				const session = readAdminSession();
+				try {
+					await ensureDemoAdminFirebaseAuth(session);
+				} catch (_) {
+				}
+				const authUser = getCurrentAdminAuthUser() || await waitForCurrentAuthUser(3500);
+				if (authUser && typeof authUser.getIdToken === 'function') {
+					try {
+						await authUser.getIdToken(true);
+					} catch (_) {
+					}
+				}
+				await loadAccounts({ allowReauthRetry: false });
+			};
 
 			const renderMerged = () => {
 				const accountMap = new Map();
+				const accountKeyByEmail = new Map();
+
+				const setAccount = (key, account) => {
+					const normalizedKey = normalizeText(key);
+					if (!normalizedKey || !account) return;
+					accountMap.set(normalizedKey, account);
+					const email = normalizeLower(account.email);
+					if (email) {
+						accountKeyByEmail.set(email, normalizedKey);
+					}
+				};
+
+				const removeAccount = (key, account) => {
+					const normalizedKey = normalizeText(key);
+					if (!normalizedKey) return;
+					accountMap.delete(normalizedKey);
+					const email = normalizeLower(account && account.email);
+					if (email && accountKeyByEmail.get(email) === normalizedKey) {
+						accountKeyByEmail.delete(email);
+					}
+				};
+
+				const upsertAccount = (id, data, source) => {
+					const normalized = normalizeAccountForAdmin(id, data, source);
+					const uidKey = normalizeText(normalized.uid || normalized.id || id);
+					const emailKey = normalizeLower(normalized.email);
+					const existingKey = uidKey && accountMap.has(uidKey)
+						? uidKey
+						: (emailKey && accountKeyByEmail.has(emailKey) ? accountKeyByEmail.get(emailKey) : '');
+
+					if (!existingKey) {
+						setAccount(uidKey || id, normalized);
+						return;
+					}
+
+					const existing = accountMap.get(existingKey);
+					const existingPriority = getAccountRolePriority(existing && existing.role);
+					const incomingPriority = getAccountRolePriority(normalized.role);
+					const merged = incomingPriority >= existingPriority
+						? Object.assign({}, existing, normalized, { role: normalized.role || (existing && existing.role) })
+						: Object.assign({}, normalized, existing, { role: (existing && existing.role) || normalized.role });
+					const targetKey = incomingPriority >= existingPriority
+						? (uidKey || existingKey)
+						: existingKey;
+
+					if (targetKey !== existingKey) {
+						removeAccount(existingKey, existing);
+					}
+					setAccount(targetKey, merged);
+				};
 
 				Object.keys(cache.admins || {}).forEach((id) => {
 					const data = cache.admins[id] && typeof cache.admins[id] === 'object' ? cache.admins[id] : {};
-					accountMap.set(id, normalizeAccountForAdmin(id, data, 'admins'));
+					upsertAccount(id, data, 'admins');
 				});
 
 				Object.keys(cache.technicians || {}).forEach((id) => {
 					const data = cache.technicians[id] && typeof cache.technicians[id] === 'object' ? cache.technicians[id] : {};
-					accountMap.set(id, normalizeAccountForAdmin(id, data, 'technicians'));
+					upsertAccount(id, data, 'technicians');
 				});
 
 				Object.keys(cache.users || {}).forEach((id) => {
 					const data = cache.users[id] && typeof cache.users[id] === 'object' ? cache.users[id] : {};
-					if (accountMap.has(id)) return;
-					accountMap.set(id, normalizeAccountForAdmin(id, data, 'users'));
+					upsertAccount(id, data, 'users');
 				});
 
 				Object.keys(cache.customers || {}).forEach((id) => {
 					const data = cache.customers[id] && typeof cache.customers[id] === 'object' ? cache.customers[id] : {};
-					const normalized = normalizeAccountForAdmin(id, data, 'customers');
-					const existing = accountMap.get(id);
-					if (existing && normalizeLower(existing.role) === 'technician') {
-						return;
-					}
-					accountMap.set(id, existing ? Object.assign({}, existing, normalized, { role: 'customer' }) : normalized);
+					upsertAccount(id, data, 'customers');
 				});
 
 				const accounts = Array.from(accountMap.values());
@@ -3730,6 +5019,7 @@
 				state.accounts = accounts;
 				renderAccountsTable();
 				renderRequestsTable();
+				renderReportsTable();
 				renderSessionLogsTable();
 				renderOverview();
 				syncTechnicianRatingAggregates();
@@ -3760,20 +5050,40 @@
 				cache.users = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
 				renderMerged();
 			};
-			const adminsFailure = (error) => {
+			const adminsFailure = async (error) => {
 				errors.admins = error || new Error('admins read failed');
+				const errorCode = normalizeLower(error && error.code);
+				if (errorCode.includes('permission') || errorCode.includes('denied')) {
+					await retryAfterReauth();
+					if (retryTriggered) return;
+				}
 				renderMerged();
 			};
-			const customersFailure = (error) => {
+			const customersFailure = async (error) => {
 				errors.customers = error || new Error('customers read failed');
+				const errorCode = normalizeLower(error && error.code);
+				if (errorCode.includes('permission') || errorCode.includes('denied')) {
+					await retryAfterReauth();
+					if (retryTriggered) return;
+				}
 				renderMerged();
 			};
-			const techniciansFailure = (error) => {
+			const techniciansFailure = async (error) => {
 				errors.technicians = error || new Error('technicians read failed');
+				const errorCode = normalizeLower(error && error.code);
+				if (errorCode.includes('permission') || errorCode.includes('denied')) {
+					await retryAfterReauth();
+					if (retryTriggered) return;
+				}
 				renderMerged();
 			};
-			const usersFailure = (error) => {
+			const usersFailure = async (error) => {
 				errors.users = error || new Error('users read failed');
+				const errorCode = normalizeLower(error && error.code);
+				if (errorCode.includes('permission') || errorCode.includes('denied')) {
+					await retryAfterReauth();
+					if (retryTriggered) return;
+				}
 				renderMerged();
 			};
 
@@ -3939,7 +5249,8 @@
 		return completedAt - scheduledAt.getTime() > LATE_COMPLETION_THRESHOLD_MS;
 	}
 
-	async function loadRequests() {
+	async function loadRequests(options) {
+		const allowReauthRetry = !options || options.allowReauthRetry !== false;
 		const tableBody = document.getElementById('requestsTableBody');
 		if (!tableBody) return;
 		setTablePagination('requestsPageIndicator', 'requestsPrevPageBtn', 'requestsNextPageBtn', 1, 1);
@@ -3953,6 +5264,7 @@
 		const rtdb = getRealtimeDatabase();
 		if (rtdb) {
 			const ref = rtdb.ref('requests');
+			let retryTriggered = false;
 			const success = (snapshot) => {
 				const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
 				const items = Object.keys(value).map((id) => {
@@ -3967,7 +5279,29 @@
 				});
 				applyRequestsState(items);
 			};
-			const failure = () => {
+			const failure = async (error) => {
+				const errorCode = normalizeLower(error && error.code);
+				if (!retryTriggered && allowReauthRetry && (errorCode.includes('permission') || errorCode.includes('denied'))) {
+					retryTriggered = true;
+					if (typeof unsubscribeRequests === 'function') {
+						unsubscribeRequests();
+						unsubscribeRequests = null;
+					}
+					const session = readAdminSession();
+					try {
+						await ensureDemoAdminFirebaseAuth(session);
+					} catch (_) {
+					}
+					const authUser = getCurrentAdminAuthUser() || await waitForCurrentAuthUser(3500);
+					if (authUser && typeof authUser.getIdToken === 'function') {
+						try {
+							await authUser.getIdToken(true);
+						} catch (_) {
+						}
+					}
+					await loadRequests({ allowReauthRetry: false });
+					return;
+				}
 				tableBody.innerHTML = '<tr><td colspan="10">Failed to load requests from Firebase Realtime Database.</td></tr>';
 				state.requests = [];
 				state.allRequests = [];
@@ -4225,29 +5559,36 @@
 		const adminSummary = document.getElementById('manageAdminSummary');
 		const panels = Array.from(document.querySelectorAll('.panel[data-panel]'));
 		if (!buttons.length || !panels.length) return;
+		const availableSections = new Set(panels.map((panel) => normalizeLower(panel.getAttribute('data-panel') || '')).filter(Boolean));
+		let currentSection = 'overview';
 
 		function activate(section, options = {}) {
+			const normalizedSection = normalizeLower(section);
+			if (!availableSections.has(normalizedSection)) return;
+			currentSection = normalizedSection;
+			const persistState = options.persistState !== false;
+
 			const targetFilter = normalizeLower(options.filter || '');
 			const targetRequestFilter = normalizeLower(options.requestFilter || '');
-			const isAdminSettingsSection = section === 'admin-profile' || section === 'admin-password';
+			const isAdminSettingsSection = normalizedSection === 'admin-profile' || normalizedSection === 'admin-password';
 
 			topButtons.forEach((button) => {
-				const isActive = button.getAttribute('data-section') === section;
+				const isActive = normalizeLower(button.getAttribute('data-section') || '') === normalizedSection;
 				button.classList.toggle('active', isActive);
 			});
 
 			subButtons.forEach((button) => {
-				const sameSection = button.getAttribute('data-section') === section;
+				const sameSection = normalizeLower(button.getAttribute('data-section') || '') === normalizedSection;
 				if (!sameSection) {
 					button.classList.remove('active');
 					return;
 				}
-				if (section === 'accounts') {
+				if (normalizedSection === 'accounts') {
 					const sameFilter = normalizeLower(button.getAttribute('data-filter') || '') === targetFilter;
 					button.classList.toggle('active', !!targetFilter && sameFilter);
 					return;
 				}
-				if (section === 'requests') {
+				if (normalizedSection === 'requests') {
 					const sameRequestFilter = normalizeLower(button.getAttribute('data-request-filter') || '') === targetRequestFilter;
 					button.classList.toggle('active', !!targetRequestFilter && sameRequestFilter);
 					return;
@@ -4256,27 +5597,33 @@
 			});
 
 			if (manageSummary) {
-				manageSummary.classList.toggle('active', section === 'accounts' || section === 'create-technician');
+				manageSummary.classList.toggle('active', normalizedSection === 'accounts' || normalizedSection === 'create-technician');
 			}
 
 			if (adminSummary) {
 				adminSummary.classList.toggle('active', isAdminSettingsSection);
 			}
 
-			if (manageGroup && (section === 'accounts' || section === 'create-technician')) {
+			if (manageGroup && (normalizedSection === 'accounts' || normalizedSection === 'create-technician')) {
 				manageGroup.open = true;
+			}
+			if (manageGroup && normalizedSection !== 'accounts' && normalizedSection !== 'create-technician') {
+				manageGroup.open = false;
 			}
 
 			if (adminGroup && isAdminSettingsSection) {
 				adminGroup.open = true;
 			}
+			if (adminGroup && !isAdminSettingsSection) {
+				adminGroup.open = false;
+			}
 
 			panels.forEach((panel) => {
-				const isActive = panel.getAttribute('data-panel') === section;
+				const isActive = normalizeLower(panel.getAttribute('data-panel') || '') === normalizedSection;
 				panel.hidden = !isActive;
 			});
 
-			if (section === 'accounts') {
+			if (normalizedSection === 'accounts') {
 				const nextAccountFilter = targetFilter || state.accountRoleFilter || 'all';
 				if (normalizeLower(nextAccountFilter) !== normalizeLower(state.accountRoleFilter || 'all')) {
 					state.accountsPage = 1;
@@ -4285,7 +5632,7 @@
 				renderAccountsTable();
 			}
 
-			if (section === 'requests') {
+			if (normalizedSection === 'requests') {
 				const nextRequestFilter = targetRequestFilter || state.requestStatusFilter || 'pending';
 				if (normalizeLower(nextRequestFilter) !== normalizeLower(state.requestStatusFilter || 'pending')) {
 					state.requestsPage = 1;
@@ -4297,16 +5644,51 @@
 			if (isAdminSettingsSection) {
 				loadAdminSettings();
 			}
+
+			if (persistState) {
+				const stateToPersist = {
+					filter: normalizedSection === 'accounts' ? targetFilter : '',
+					requestFilter: normalizedSection === 'requests' ? targetRequestFilter : ''
+				};
+				writeAdminActiveSectionState(normalizedSection, stateToPersist);
+				writeAdminSectionHashState(normalizedSection, stateToPersist);
+			}
 		}
 
 		buttons.forEach((button) => {
 			button.addEventListener('click', () => {
-				const section = button.getAttribute('data-section');
+				const section = normalizeLower(button.getAttribute('data-section') || '');
 				const filter = button.getAttribute('data-filter');
 				const requestFilter = button.getAttribute('data-request-filter');
 				activate(section, { filter, requestFilter });
 			});
 		});
+
+		const forceOverview = consumeForceOverviewOnce();
+		const hashState = forceOverview ? null : readAdminSectionHashState();
+		const saved = forceOverview ? { section: 'overview', filter: '', requestFilter: '' } : readAdminActiveSectionState();
+		const preferred = hashState && availableSections.has(hashState.section) ? hashState : saved;
+		const initialSection = availableSections.has(preferred.section) ? preferred.section : 'overview';
+		activate(initialSection, {
+			filter: preferred.filter,
+			requestFilter: preferred.requestFilter
+		});
+
+		window.addEventListener('hashchange', () => {
+			const stateFromHash = readAdminSectionHashState();
+			if (!stateFromHash || !availableSections.has(stateFromHash.section)) return;
+			activate(stateFromHash.section, {
+				filter: stateFromHash.filter,
+				requestFilter: stateFromHash.requestFilter,
+				persistState: false
+			});
+		});
+
+		return {
+			getCurrentSection() {
+				return currentSection;
+			}
+		};
 	}
 
 	function bindSidebarToggle() {
@@ -4624,17 +6006,27 @@
 		if (adminProfileForm) {
 			adminProfileForm.addEventListener('submit', saveAdminProfile);
 
-			const editAdminProfileBtn = document.getElementById('editAdminProfileBtn');
-			if (editAdminProfileBtn) {
-				editAdminProfileBtn.addEventListener('click', async () => {
-					if (adminProfileForm.dataset.editing === 'true') {
-						setSettingsMessage('adminProfileMessage', '');
-						await loadAdminSettings();
+			const editAdminEmailBtn = document.getElementById('editAdminEmailBtn');
+			if (editAdminEmailBtn) {
+				editAdminEmailBtn.addEventListener('click', () => {
+					setSettingsMessage('adminProfileMessage', '');
+					if (adminProfileForm.dataset.emailEditing === 'true') {
+						resetAdminEmailSection();
 						return;
 					}
+					setAdminEmailEditingState(true);
+				});
+			}
 
+			const editAdminNameBtn = document.getElementById('editAdminNameBtn');
+			if (editAdminNameBtn) {
+				editAdminNameBtn.addEventListener('click', () => {
 					setSettingsMessage('adminProfileMessage', '');
-					setAdminProfileEditingState(true);
+					if (adminProfileForm.dataset.nameEditing === 'true') {
+						resetAdminNameSection();
+						return;
+					}
+					setAdminNameEditingState(true);
 				});
 			}
 
@@ -4642,6 +6034,29 @@
 			if (sendAdminVerificationBtn) {
 				sendAdminVerificationBtn.addEventListener('click', sendAdminProfileVerification);
 			}
+
+			const saveAdminEmailBtn = document.getElementById('saveAdminEmailBtn');
+			if (saveAdminEmailBtn) {
+				saveAdminEmailBtn.addEventListener('click', saveAdminEmail);
+			}
+
+			// Always refresh verification state on visibility/focus, not just in edit mode
+			async function refreshAdminEmailVerificationUI() {
+				const profileElements = getAdminProfileElements();
+				if (!profileElements) return;
+				const targetEmail = normalizeLower((profileElements.form.dataset.pendingEmail) || (profileElements.emailInput && profileElements.emailInput.value) || profileElements.form.dataset.savedEmail);
+				await refreshAdminEmailVerificationState(targetEmail);
+			}
+
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'visible') {
+					refreshAdminEmailVerificationUI().catch(() => {});
+				}
+			});
+
+			window.addEventListener('focus', () => {
+				refreshAdminEmailVerificationUI().catch(() => {});
+			});
 
 			['adminSettingsEmail', 'adminFirstName', 'adminLastName']
 				.map((id) => document.getElementById(id))
@@ -4671,15 +6086,18 @@
 			adminPasswordForm.addEventListener('submit', saveAdminPassword);
 			bindPasswordToggleButtons();
 
-			['adminNewPassword', 'adminConfirmPassword']
+			['adminCurrentPassword', 'adminNewPassword', 'adminConfirmPassword']
 				.map((id) => document.getElementById(id))
 				.filter(Boolean)
 				.forEach((input) => {
 					input.addEventListener('input', () => {
 						setInputInvalidState(input, false);
 						setSettingsMessage('adminPasswordMessage', '');
+						syncAdminPasswordValidationState();
 					});
 				});
+
+			syncAdminPasswordValidationState();
 		}
 
 		bindSessionFilters();
@@ -4804,23 +6222,138 @@
 			return;
 		}
 
-		if (messageEl) {
-			const name = String(session.username || 'admin');
-			messageEl.textContent = `Welcome, ${name}.`;
-		}
+		// Apply saved section visibility immediately so reload does not flash back to overview.
+		(() => {
+			const panels = Array.from(document.querySelectorAll('.panel[data-panel]'));
+			if (!panels.length) return;
+			let forceOverview = false;
+			try {
+				forceOverview = sessionStorage.getItem(ADMIN_FORCE_OVERVIEW_ONCE_KEY) === '1';
+			} catch (_) {
+				forceOverview = false;
+			}
+			const availableSections = new Set(panels.map((panel) => normalizeLower(panel.getAttribute('data-panel') || '')).filter(Boolean));
+			const hashState = forceOverview ? null : readAdminSectionHashState();
+			const savedState = forceOverview ? { section: 'overview', filter: '', requestFilter: '' } : readAdminActiveSectionState();
+			const preferred = hashState && availableSections.has(hashState.section) ? hashState : savedState;
+			const initialSection = availableSections.has(preferred.section) ? preferred.section : 'overview';
+
+			panels.forEach((panel) => {
+				const section = normalizeLower(panel.getAttribute('data-panel') || '');
+				panel.hidden = section !== initialSection;
+			});
+
+			document.querySelectorAll('.nav-link[data-section]').forEach((button) => {
+				const section = normalizeLower(button.getAttribute('data-section') || '');
+				button.classList.toggle('active', section === initialSection);
+			});
+
+			document.querySelectorAll('.nav-sub-link[data-section]').forEach((button) => {
+				const section = normalizeLower(button.getAttribute('data-section') || '');
+				if (section !== initialSection) {
+					button.classList.remove('active');
+					return;
+				}
+
+				if (initialSection === 'accounts') {
+					const subFilter = normalizeLower(button.getAttribute('data-filter') || '');
+					button.classList.toggle('active', !!preferred.filter && subFilter === preferred.filter);
+					return;
+				}
+
+				if (initialSection === 'requests') {
+					const subRequestFilter = normalizeLower(button.getAttribute('data-request-filter') || '');
+					button.classList.toggle('active', !!preferred.requestFilter && subRequestFilter === preferred.requestFilter);
+					return;
+				}
+
+				button.classList.add('active');
+			});
+
+			const manageGroup = document.getElementById('manageAccountsGroup');
+			const manageSummary = document.getElementById('manageAccountsSummary');
+			if (manageSummary) {
+				manageSummary.classList.toggle('active', initialSection === 'accounts' || initialSection === 'create-technician');
+			}
+			if (manageGroup && (initialSection === 'accounts' || initialSection === 'create-technician')) {
+				manageGroup.open = true;
+			}
+
+			const adminGroup = document.getElementById('manageAdminGroup');
+			const adminSummary = document.getElementById('manageAdminSummary');
+			const isAdminSettingsSection = initialSection === 'admin-profile' || initialSection === 'admin-password';
+			if (adminSummary) {
+				adminSummary.classList.toggle('active', isAdminSettingsSection);
+			}
+			if (adminGroup && isAdminSettingsSection) {
+				adminGroup.open = true;
+			}
+		})();
+
+		updateAdminSessionGreeting(null, session, normalizeLower(session && (session.email || session.username)));
 
 		await ensureDemoAdminFirebaseAuth(session);
-		await migrateLegacyUsersRootTechnicians();
-		await migrateSpecificEmailsToTechnician();
+		const activeAuthUser = getCurrentAdminAuthUser() || await waitForCurrentAuthUser(3500);
+		if (activeAuthUser && typeof activeAuthUser.getIdToken === 'function') {
+			try {
+				await activeAuthUser.getIdToken(false);
+			} catch (_) {
+			}
+		}
+		await ensureAdminRealtimeAccess(activeAuthUser);
 
-		bindNavigation();
+		const navigation = bindNavigation();
+		const initialPanelStyle = document.getElementById('admin-initial-panel-style');
+		if (initialPanelStyle && initialPanelStyle.parentNode) {
+			initialPanelStyle.parentNode.removeChild(initialPanelStyle);
+		}
+		document.documentElement.classList.remove('hfs-admin-preopen-accounts');
+		document.documentElement.classList.remove('hfs-admin-preopen-admin');
+		const initialSection = navigation && typeof navigation.getCurrentSection === 'function'
+			? normalizeLower(navigation.getCurrentSection()) || 'overview'
+			: 'overview';
 		bindSidebarToggle();
 		bindEvents();
-		await loadAdminSettings();
 		renderBackupSummary();
 		startSessionPresenceTracking();
-		Promise.all([loadAccounts(), loadRequests(), loadSessionLogs()]);
-		loadReports();
+
+		const startedLoaders = new Set();
+		const runLoader = async (name, loader) => {
+			if (startedLoaders.has(name)) return;
+			startedLoaders.add(name);
+			await loader();
+		};
+
+		const eagerLoaders = [];
+		if (initialSection === 'overview') {
+			eagerLoaders.push(['accounts', loadAccounts], ['requests', loadRequests]);
+		} else if (initialSection === 'accounts' || initialSection === 'create-technician') {
+			eagerLoaders.push(['accounts', loadAccounts]);
+		} else if (initialSection === 'requests') {
+			eagerLoaders.push(['requests', loadRequests]);
+		} else if (initialSection === 'session-logs') {
+			eagerLoaders.push(['session-logs', loadSessionLogs]);
+		} else if (initialSection === 'reports') {
+			eagerLoaders.push(['reports', loadReports]);
+		} else if (initialSection === 'admin-profile' || initialSection === 'admin-password') {
+			eagerLoaders.push(['admin-settings', loadAdminSettings]);
+		}
+
+		await Promise.all(eagerLoaders.map(([name, loader]) => runLoader(name, loader)));
+
+		setTimeout(() => {
+			[
+				['migrate-legacy-technicians', migrateLegacyUsersRootTechnicians],
+				['migrate-specific-technicians', migrateSpecificEmailsToTechnician],
+				['admin-settings', loadAdminSettings],
+				['accounts', loadAccounts],
+				['requests', loadRequests],
+				['session-logs', loadSessionLogs],
+				['reports', loadReports]
+			].forEach(([name, loader]) => {
+				runLoader(name, loader).catch(() => {});
+			});
+		}, 0);
 
 		window.addEventListener('beforeunload', () => {
 			if (typeof unsubscribeAccounts === 'function') {

@@ -7,6 +7,8 @@
   const ADMIN_DEMO_PASSWORD = 'admin123';
   const ADMIN_DEMO_SESSION_KEY = 'hfs_admin_demo_session';
   const ADMIN_DEMO_AUTH_KEY = 'hfs_admin_demo_firebase_auth_v1';
+  const ADMIN_RUNTIME_AUTH_KEY = 'hfs_admin_runtime_auth_v1';
+  const PENDING_ADMIN_INVITES_KEY = 'hfs_pending_admin_invites_v1';
   const PROFILE_CACHE_KEY = 'hfs_profile_cache_v1';
   const DISABLED_ACCOUNT_MESSAGE = 'Your account has been disabled. Please contact the administrator for assistance.';
   const FORCED_TECHNICIAN_EMAILS = new Set(['kingsnever721@gmail.com']);
@@ -119,6 +121,45 @@
         email: String(email || '').trim().toLowerCase(),
         password: String(password || '')
       }));
+    } catch (_) {
+    }
+  }
+
+  function writeAdminRuntimeAuth(email, password) {
+    try {
+      sessionStorage.setItem(ADMIN_RUNTIME_AUTH_KEY, JSON.stringify({
+        email: String(email || '').trim().toLowerCase(),
+        password: String(password || '')
+      }));
+    } catch (_) {
+    }
+  }
+
+  function readPendingAdminInvites() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PENDING_ADMIN_INVITES_KEY) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function readPendingAdminInvite(email) {
+    const normalizedEmail = normalizeLower(email);
+    if (!normalizedEmail) return null;
+    const invites = readPendingAdminInvites();
+    const item = invites[normalizedEmail];
+    return item && typeof item === 'object' ? item : null;
+  }
+
+  function removePendingAdminInvite(email) {
+    const normalizedEmail = normalizeLower(email);
+    if (!normalizedEmail) return;
+    const invites = readPendingAdminInvites();
+    if (!Object.prototype.hasOwnProperty.call(invites, normalizedEmail)) return;
+    delete invites[normalizedEmail];
+    try {
+      localStorage.setItem(PENDING_ADMIN_INVITES_KEY, JSON.stringify(invites));
     } catch (_) {
     }
   }
@@ -406,11 +447,17 @@
 
     if (!rtdb || !cleanUid) return null;
 
-    const [techSnap, customerSnap, userSnap] = await Promise.all([
+    const [adminSnap, techSnap, customerSnap, userSnap] = await Promise.all([
+      rtdb.ref(`admins/${cleanUid}`).once('value').catch(() => null),
       rtdb.ref(`technicians/${cleanUid}`).once('value'),
       rtdb.ref(`customers/${cleanUid}`).once('value'),
       rtdb.ref(`users/${cleanUid}`).once('value')
     ]);
+
+    if (adminSnap && adminSnap.exists()) {
+      const adminData = adminSnap.val() || {};
+      return Object.assign({}, adminData, { uid: cleanUid, email: cleanEmail || adminData.email || '', role: 'admin' });
+    }
 
     if (techSnap && techSnap.exists()) {
       const techData = techSnap.val() || {};
@@ -490,36 +537,6 @@
 
     const normalizedIdentifier = identifier.toLowerCase();
 
-    if (normalizedIdentifier === ADMIN_DEMO_USERNAME) {
-      if (password !== ADMIN_DEMO_PASSWORD) {
-        ns.setError(passwordInput, 'Invalid admin password.');
-        if (passwordInput) passwordInput.focus();
-        return;
-      }
-
-      // Non-blocking: admin demo access should still proceed even when Firebase auth bootstrap fails.
-      ensureDemoAdminFirebaseSession().catch(() => {});
-
-      try {
-        sessionStorage.setItem(ADMIN_DEMO_SESSION_KEY, JSON.stringify({
-          username: ADMIN_DEMO_USERNAME,
-          role: 'admin',
-          source: 'demo'
-        }));
-      } catch (_) {
-      }
-
-      startRoleSession({
-        role: 'admin',
-        email: ADMIN_DEMO_USERNAME,
-        name: ADMIN_DEMO_USERNAME,
-        source: 'demo-login'
-      }).catch(() => {});
-
-      window.location.href = 'html/admin/dashboard.html';
-      return;
-    }
-
     const isEmail = emailRegex.test(identifier);
     if (!isEmail) {
       ns.setError(emailInput, 'Please enter a valid email (sample@gmail.com or sample@yahoo.com).');
@@ -594,6 +611,29 @@
 
       const resolvedProfile = await resolveProfileFast(authUid, effectiveEmail);
       let profile = resolvedProfile.profile;
+      const pendingAdminInvite = !profile ? readPendingAdminInvite(effectiveEmail) : null;
+
+      if (!profile && pendingAdminInvite && authUser && authUser.emailVerified && typeof window.usersDatabase.updateUserProfile === 'function') {
+        const pendingProfile = pendingAdminInvite && typeof pendingAdminInvite === 'object'
+          ? pendingAdminInvite
+          : {};
+
+        await window.usersDatabase.updateUserProfile(authUid, {
+          uid: authUid,
+          email: effectiveEmail,
+          first_name: String(pendingProfile.first_name || 'Admin').trim(),
+          middle_name: '',
+          last_name: String(pendingProfile.last_name || 'User').trim(),
+          role: 'admin',
+          isActive: pendingProfile.isActive !== false,
+          isVerified: true,
+          emailVerified: true,
+          updatedAt: Date.now()
+        }).catch(() => {});
+
+        profile = await resolveProfileFast(authUid, effectiveEmail).then((result) => result.profile).catch(() => null);
+        if (profile) removePendingAdminInvite(effectiveEmail);
+      }
 
       if (resolvedProfile.byEmail && typeof window.usersDatabase.updateUserProfile === 'function') {
         const byEmail = resolvedProfile.byEmail;
@@ -614,6 +654,20 @@
       }
 
       if (!profile) {
+        if (pendingAdminInvite && authUser && !authUser.emailVerified) {
+          try {
+            await authUser.sendEmailVerification();
+          } catch (_) {
+          }
+          try {
+            await window.usersDatabase.signOut();
+          } catch (_) {
+          }
+          ns.setError(passwordInput, 'Please verify your admin email first. We sent a verification email. After verification, sign in again to finish admin setup.');
+          if (passwordInput) passwordInput.focus();
+          return;
+        }
+
         try {
           await window.usersDatabase.signOut();
         } catch (_) {
@@ -671,6 +725,28 @@
       }
 
       if (role === 'admin') {
+    try {
+      sessionStorage.setItem(ADMIN_DEMO_SESSION_KEY, JSON.stringify({
+        username: effectiveEmail,
+        email: effectiveEmail,
+        uid: authUid,
+        role: 'admin',
+        source: 'firebase-login'
+      }));
+      sessionStorage.setItem('hfs_admin_force_overview_once', '1');
+    } catch (_) {
+    }
+
+    try {
+      localStorage.setItem('hfs_admin_active_section_v1', 'overview');
+      localStorage.setItem('hfs_admin_active_section_filter_v1', '');
+      localStorage.setItem('hfs_admin_active_request_filter_v1', '');
+    } catch (_) {
+    }
+
+    writeAdminDemoAuth(effectiveEmail, password);
+		writeAdminRuntimeAuth(effectiveEmail, password);
+
         startRoleSession({
           role: 'admin',
           uid: authUid,

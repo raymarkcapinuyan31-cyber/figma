@@ -268,6 +268,85 @@ document.addEventListener('DOMContentLoaded', () => {
     return `chats/${String(requestId || '').trim()}`;
   }
 
+  function getLegacyRequestChatPath(requestId) {
+    return `requestChats/${String(requestId || '').trim()}`;
+  }
+
+  function mergeRealtimeMessages(primaryMessages, legacyMessages) {
+    const mergedById = new Map();
+
+    function mergeOne(entry) {
+      if (!entry || typeof entry !== 'object') return;
+      const id = String(entry.id || '').trim();
+      if (!id) return;
+      const existing = mergedById.get(id);
+      if (!existing) {
+        mergedById.set(id, entry);
+        return;
+      }
+      const existingTime = toTimeValue(existing && existing.createdAt);
+      const nextTime = toTimeValue(entry && entry.createdAt);
+      if (nextTime >= existingTime) {
+        mergedById.set(id, entry);
+      }
+    }
+
+    (Array.isArray(primaryMessages) ? primaryMessages : []).forEach(mergeOne);
+    (Array.isArray(legacyMessages) ? legacyMessages : []).forEach(mergeOne);
+
+    const messages = Array.from(mergedById.values());
+    messages.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    return messages;
+  }
+
+  function bindMergedRealtimeMessages(rtdb, requestId, onMessages, onError) {
+    const state = {
+      primary: [],
+      legacy: [],
+      primaryErrored: false,
+      legacyErrored: false
+    };
+
+    const emit = () => {
+      onMessages(mergeRealtimeMessages(state.primary, state.legacy));
+    };
+
+    const primaryRef = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
+    const legacyRef = rtdb.ref(getLegacyRequestChatPath(requestId)).limitToLast(200);
+
+    const makeOnValue = (key) => (snapshot) => {
+      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+      state[key] = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
+      emit();
+    };
+
+    const onPrimaryValue = makeOnValue('primary');
+    const onLegacyValue = makeOnValue('legacy');
+
+    const onPrimaryError = (error) => {
+      state.primaryErrored = true;
+      emit();
+      if (state.legacyErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+    const onLegacyError = (error) => {
+      state.legacyErrored = true;
+      emit();
+      if (state.primaryErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+
+    primaryRef.on('value', onPrimaryValue, onPrimaryError);
+    legacyRef.on('value', onLegacyValue, onLegacyError);
+
+    return () => {
+      primaryRef.off('value', onPrimaryValue);
+      legacyRef.off('value', onLegacyValue);
+    };
+  }
+
   function getCustomerDisplayName() {
     const email = String(activeUser && activeUser.email ? activeUser.email : '').trim();
     return email || 'Customer';
@@ -585,7 +664,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isConfirmedBucketStatus(statusValue) {
     const status = String(statusValue || '').toLowerCase();
-    return status === 'confirmed' || status === 'accepted';
+    return status === 'confirmed'
+      || status === 'accepted'
+      || status === 'in-progress'
+      || status === 'ongoing';
+  }
+
+  function getPendingBucketItems(items) {
+    return Array.isArray(items)
+      ? items.filter((item) => {
+          const status = String(item && item.status ? item.status : 'pending').toLowerCase();
+          return status === 'pending' || status === 'offered';
+        })
+      : [];
+  }
+
+  function getConfirmedBucketItems(items) {
+    return Array.isArray(items)
+      ? items.filter((item) => {
+          const status = String(item && item.status ? item.status : '').toLowerCase();
+          return isConfirmedBucketStatus(status);
+        })
+      : [];
   }
 
   function statusClassName(status) {
@@ -704,12 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderPendingList(items) {
-    const pendingItems = Array.isArray(items)
-      ? items.filter((item) => {
-          const status = String(item && item.status ? item.status : 'pending').toLowerCase();
-          return status === 'pending' || status === 'offered';
-        })
-      : [];
+    const pendingItems = getPendingBucketItems(items);
 
     renderRequestList(pendingItems, {
       allowCancel: true,
@@ -721,18 +816,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderConfirmedList(items) {
-    const confirmedItems = Array.isArray(items)
-      ? items.filter((item) => {
-          const status = String(item && item.status ? item.status : '').toLowerCase();
-          return isConfirmedBucketStatus(status);
-        })
-      : [];
+    const confirmedItems = getConfirmedBucketItems(items);
 
     renderRequestList(confirmedItems, {
       allowCancel: true,
-      emptyDefault: 'No confirmed request yet.',
-      emptyAppointment: 'No confirmed appointment yet.',
-      emptyTechnician: 'No confirmed technician booking yet.'
+      emptyDefault: 'No confirmed or active request yet.',
+      emptyAppointment: 'No confirmed or active appointment yet.',
+      emptyTechnician: 'No confirmed or active technician booking yet.'
     });
   }
 
@@ -754,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getAcceptedRequestsForMessages(items) {
     return Array.isArray(items)
-      ? items.filter((item) => String(item && item.status ? item.status : '').toLowerCase() === 'accepted')
+      ? items.filter((item) => isConfirmedBucketStatus(String(item && item.status ? item.status : '').toLowerCase()))
       : [];
   }
 
@@ -840,11 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     input.disabled = false;
     sendBtn.disabled = false;
 
-    const ref = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
-    const onValue = (snapshot) => {
-      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
-      const messages = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
-      messages.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    const onValue = (messages) => {
 
       if (!messages.length) {
         list.innerHTML = '<div class="request-empty">No messages yet.</div>';
@@ -864,10 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
       list.innerHTML = '<div class="request-empty">Unable to load chat messages.</div>';
     };
 
-    ref.on('value', onValue, onError);
-    unsubscribeMessagesChat = () => {
-      ref.off('value', onValue);
-    };
+    unsubscribeMessagesChat = bindMergedRealtimeMessages(rtdb, requestId, onValue, onError);
 
     form.onsubmit = async (event) => {
       event.preventDefault();
@@ -876,14 +959,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
       sendBtn.disabled = true;
       try {
-        await rtdb.ref(getRequestChatPath(requestId)).push({
+        const payload = {
           requestId,
           text,
           senderUid: String(activeUser.uid || ''),
           senderRole: 'customer',
           senderName: getCustomerDisplayName(),
           createdAt: Date.now()
-        });
+        };
+
+        const primaryRef = rtdb.ref(getRequestChatPath(requestId)).push();
+        const messageId = primaryRef && primaryRef.key ? String(primaryRef.key).trim() : '';
+        await primaryRef.set(payload);
+
+        if (messageId) {
+          try {
+            await rtdb.ref(`${getLegacyRequestChatPath(requestId)}/${messageId}`).set(payload);
+          } catch (_) {
+          }
+        }
         input.value = '';
       } catch (_) {
         await showNotice('Failed to send message. Please try again.');
@@ -922,6 +1016,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderActiveTab() {
+    if (activeTab === 'pending') {
+      const pendingItems = getPendingBucketItems(activeItems);
+      const confirmedItems = getConfirmedBucketItems(activeItems);
+      if (!pendingItems.length && confirmedItems.length) {
+        setActiveTab('confirmed');
+        renderConfirmedList(activeItems);
+        return;
+      }
+    }
+
     if (activeTab === 'confirmed') {
       renderConfirmedList(activeItems);
     } else if (activeTab === 'history') {

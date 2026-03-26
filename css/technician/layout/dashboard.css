@@ -68,9 +68,18 @@ body{background:#f4f7fb;overflow:hidden}
 .app-shell.sidebar-collapsed .sidebar{width:0;min-width:0;padding-left:0;padding-right:0;border-right:none}
 .app-shell.sidebar-collapsed .content{padding-left:0;padding-right:0}
 
-@media(max-width:900px){
+@media(max-width:1024px){
   body{overflow:auto}
-  .layout{flex-direction:column}
-  .sidebar{width:100%;border-right:none;border-bottom:1px solid #e3e8f0;position:static;height:auto}
-  .content{max-height:none;overflow:visible}
+  .topbar{padding:0 12px}
+  .layout{position:relative;gap:0;padding:0}
+  .sidebar{width:min(82vw,280px);min-width:0;position:fixed;left:0;top:76px;height:calc(100vh - 76px);z-index:50;border-right:1px solid #dbe6f5;box-shadow:0 12px 28px rgba(18,40,72,.22);transform:translateX(0);transition:transform .24s ease,box-shadow .2s ease,padding .2s ease,border-color .2s ease}
+  .content{max-height:none;overflow:auto;padding:14px;max-width:none}
+  .panel{max-width:none}
+  .app-shell.sidebar-collapsed .sidebar{transform:translateX(-100%);width:min(82vw,280px);padding:22px 14px;border-right:1px solid #dbe6f5}
+}
+
+@media(max-width:720px){
+  .sidebar{width:min(88vw,300px)}
+  .app-shell.sidebar-collapsed .sidebar{width:min(88vw,300px)}
+  .content{padding:12px}
 }

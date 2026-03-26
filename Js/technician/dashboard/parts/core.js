@@ -1,5 +1,26 @@
 (function () {
   const ns = (window.hfsTechDashboard = window.hfsTechDashboard || {});
+  const TECH_SIDEBAR_COLLAPSED_KEY = 'hfs_technician_sidebar_collapsed_v1';
+  const SIDEBAR_COMPACT_BREAKPOINT = 1024;
+
+  function readSidebarCollapsedState() {
+    try {
+      return localStorage.getItem(TECH_SIDEBAR_COLLAPSED_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeSidebarCollapsedState(collapsed) {
+    try {
+      localStorage.setItem(TECH_SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch (_) {
+    }
+  }
+
+  function isCompactViewport() {
+    return window.innerWidth <= SIDEBAR_COMPACT_BREAKPOINT;
+  }
   const usersDb = window.usersDatabase || window.homefixDB || window.userProfileDatabase || null;
 
   const DEMO_SESSION_KEY = 'hfs_technician_demo_session';
@@ -38,6 +59,14 @@
 
   function normalizeText(value) {
     return String(value || '').trim();
+  }
+
+  function getChatPath(requestId) {
+    return `chats/${normalizeText(requestId)}`;
+  }
+
+  function getLegacyChatPath(requestId) {
+    return `requestChats/${normalizeText(requestId)}`;
   }
 
   function toTimeValue(value) {
@@ -252,17 +281,28 @@
           activeIds.add(requestId);
           if (techNotificationChatUnsubscribers[requestId]) return;
 
-          const ref = rtdb.ref(`chats/${requestId}`).limitToLast(1);
-          const onChatValue = (chatSnapshot) => {
-            const chatValue = chatSnapshot && typeof chatSnapshot.val === 'function' ? (chatSnapshot.val() || {}) : {};
-            const keys = Object.keys(chatValue);
-            if (!keys.length) {
+          const primaryRef = rtdb.ref(getChatPath(requestId)).limitToLast(1);
+          const legacyRef = rtdb.ref(getLegacyChatPath(requestId)).limitToLast(1);
+          const state = { primary: null, legacy: null };
+
+          const readLatest = (snapshot) => {
+            const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+            const keys = Object.keys(value);
+            if (!keys.length) return null;
+            return value[keys[0]] || null;
+          };
+
+          const applyLatest = () => {
+            const primaryTime = toTimeValue(state.primary && state.primary.createdAt);
+            const legacyTime = toTimeValue(state.legacy && state.legacy.createdAt);
+            const latest = legacyTime > primaryTime ? state.legacy : state.primary;
+
+            if (!latest) {
               delete techNotificationLatestByRequest[requestId];
               refreshTechNotificationUi();
               return;
             }
 
-            const latest = chatValue[keys[0]] || {};
             const createdAt = toTimeValue(latest && latest.createdAt);
             const senderRole = normalizeText(latest && latest.senderRole).toLowerCase();
             techNotificationLatestByRequest[requestId] = {
@@ -279,14 +319,24 @@
 
             refreshTechNotificationUi();
           };
-          const onChatError = () => {
-            delete techNotificationLatestByRequest[requestId];
-            refreshTechNotificationUi();
+
+          const onPrimaryValue = (chatSnapshot) => {
+            state.primary = readLatest(chatSnapshot);
+            applyLatest();
+          };
+          const onLegacyValue = (chatSnapshot) => {
+            state.legacy = readLatest(chatSnapshot);
+            applyLatest();
+          };
+          const onAnyError = () => {
+            applyLatest();
           };
 
-          ref.on('value', onChatValue, onChatError);
+          primaryRef.on('value', onPrimaryValue, onAnyError);
+          legacyRef.on('value', onLegacyValue, onAnyError);
           techNotificationChatUnsubscribers[requestId] = () => {
-            ref.off('value', onChatValue);
+            primaryRef.off('value', onPrimaryValue);
+            legacyRef.off('value', onLegacyValue);
           };
         });
 
@@ -558,11 +608,31 @@
     const sidebarToggle = document.getElementById('sidebarToggle');
     if (!sidebarToggle || !appShell) return;
 
-    sidebarToggle.addEventListener('click', () => {
-      const collapsed = appShell.classList.toggle('sidebar-collapsed');
+    function applySidebarState(collapsed) {
+      appShell.classList.toggle('sidebar-collapsed', !!collapsed);
       sidebarToggle.textContent = collapsed ? '☰' : '✕';
       sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
+
+    function syncSidebarWithViewport() {
+      if (isCompactViewport()) {
+        applySidebarState(true);
+        return;
+      }
+      applySidebarState(readSidebarCollapsedState());
+    }
+
+    syncSidebarWithViewport();
+
+    sidebarToggle.addEventListener('click', () => {
+      const collapsed = !appShell.classList.contains('sidebar-collapsed');
+      applySidebarState(collapsed);
+      if (!isCompactViewport()) {
+        writeSidebarCollapsedState(collapsed);
+      }
     });
+
+    window.addEventListener('resize', syncSidebarWithViewport);
   };
 
   ns.bindUserMenu = function bindUserMenu() {

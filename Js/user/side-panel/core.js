@@ -4,11 +4,13 @@
   const SIDEBAR_COLLAPSED_KEY = 'hfs_sidebar_collapsed_v1';
   const PENDING_REGISTER_SYNC_KEY = 'hfs_register_pending_sync_v1';
   const NOTIFICATION_READ_KEY = 'hfs_customer_notification_reads_v1';
+  const SIDEBAR_COMPACT_BREAKPOINT = 1024;
   let pendingSyncRetryTimer = null;
   let unsubscribeNotificationBookings = null;
   const notificationChatUnsubscribers = Object.create(null);
   const notificationLatestByRequest = Object.create(null);
   let notificationPanelSnapshot = null;
+  let notificationUiRefreshTimer = null;
 
   function readInitialSidebarCollapsedState() {
     try {
@@ -18,7 +20,7 @@
     }
   }
 
-  if (readInitialSidebarCollapsedState()) {
+  if (window.innerWidth <= SIDEBAR_COMPACT_BREAKPOINT || readInitialSidebarCollapsedState()) {
     document.documentElement.classList.add('hfs-sidebar-precollapsed');
   } else {
     document.documentElement.classList.add('hfs-sidebar-preexpanded');
@@ -39,12 +41,24 @@
     }
   }
 
+  function isCompactViewport() {
+    return window.innerWidth <= SIDEBAR_COMPACT_BREAKPOINT;
+  }
+
   function normalizeText(value) {
     return String(value || '').trim();
   }
 
   function normalizeLower(value) {
     return normalizeText(value).toLowerCase();
+  }
+
+  function getChatPath(requestId) {
+    return `chats/${normalizeText(requestId)}`;
+  }
+
+  function getLegacyChatPath(requestId) {
+    return `requestChats/${normalizeText(requestId)}`;
   }
 
   function toTimeValue(value) {
@@ -524,6 +538,10 @@
     }
     unsubscribeNotificationBookings = null;
     clearNotificationChatSubscriptions();
+    if (notificationUiRefreshTimer) {
+      clearTimeout(notificationUiRefreshTimer);
+      notificationUiRefreshTimer = null;
+    }
     notificationPanelSnapshot = null;
     renderNotificationPanel([]);
     renderNotificationBadge();
@@ -535,6 +553,14 @@
       renderNotificationPanel(notificationPanelSnapshot);
     }
     renderNotificationBadge();
+  }
+
+  function scheduleTopbarNotificationUiRefresh() {
+    if (notificationUiRefreshTimer) return;
+    notificationUiRefreshTimer = setTimeout(() => {
+      notificationUiRefreshTimer = null;
+      refreshTopbarNotificationUi();
+    }, 50);
   }
 
   function bindTopbarNotificationsForUser(user) {
@@ -563,17 +589,21 @@
 
         if (notificationChatUnsubscribers[requestId]) return;
 
-        const ref = rtdb.ref(`chats/${requestId}`).limitToLast(1);
-        const onValue = (snapshot) => {
-          const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
-          const keys = Object.keys(value);
-          if (!keys.length) {
+        const primaryRef = rtdb.ref(getChatPath(requestId)).limitToLast(1);
+        const legacyRef = rtdb.ref(getLegacyChatPath(requestId)).limitToLast(1);
+        const state = { primary: null, legacy: null };
+
+        const applyLatest = () => {
+          const primaryTime = toTimeValue(state.primary && state.primary.createdAt);
+          const legacyTime = toTimeValue(state.legacy && state.legacy.createdAt);
+          const latest = legacyTime > primaryTime ? state.legacy : state.primary;
+
+          if (!latest) {
             delete notificationLatestByRequest[requestId];
-            refreshTopbarNotificationUi();
+            scheduleTopbarNotificationUiRefresh();
             return;
           }
 
-          const latest = value[keys[0]] || {};
           const createdAt = toTimeValue(latest && latest.createdAt);
           const senderRole = normalizeText(latest && latest.senderRole).toLowerCase();
           notificationLatestByRequest[requestId] = {
@@ -588,16 +618,33 @@
             markNotificationsAsRead([{ requestId, createdAt }]);
           }
 
-          refreshTopbarNotificationUi();
-        };
-        const onError = () => {
-          delete notificationLatestByRequest[requestId];
-          refreshTopbarNotificationUi();
+          scheduleTopbarNotificationUiRefresh();
         };
 
-        ref.on('value', onValue, onError);
+        const readLatest = (snapshot) => {
+          const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+          const keys = Object.keys(value);
+          if (!keys.length) return null;
+          return value[keys[0]] || null;
+        };
+
+        const onPrimaryValue = (snapshot) => {
+          state.primary = readLatest(snapshot);
+          applyLatest();
+        };
+        const onLegacyValue = (snapshot) => {
+          state.legacy = readLatest(snapshot);
+          applyLatest();
+        };
+        const onAnyError = () => {
+          applyLatest();
+        };
+
+        primaryRef.on('value', onPrimaryValue, onAnyError);
+        legacyRef.on('value', onLegacyValue, onAnyError);
         notificationChatUnsubscribers[requestId] = () => {
-          ref.off('value', onValue);
+          primaryRef.off('value', onPrimaryValue);
+          legacyRef.off('value', onLegacyValue);
         };
       });
 
@@ -614,7 +661,7 @@
         delete notificationLatestByRequest[requestId];
       });
 
-      refreshTopbarNotificationUi();
+      scheduleTopbarNotificationUiRefresh();
     }, () => {
       teardownTopbarNotifications();
     });
@@ -732,7 +779,15 @@
       sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     }
 
-    applySidebarState(readSidebarCollapsedState());
+    function syncSidebarWithViewport() {
+      if (isCompactViewport()) {
+        applySidebarState(true);
+        return;
+      }
+      applySidebarState(readSidebarCollapsedState());
+    }
+
+    syncSidebarWithViewport();
     appShell.classList.add('sidebar-state-ready');
     document.documentElement.classList.remove('hfs-sidebar-precollapsed');
     document.documentElement.classList.remove('hfs-sidebar-preexpanded');
@@ -740,8 +795,12 @@
     sidebarToggle.addEventListener('click', () => {
       const willCollapse = !appShell.classList.contains('sidebar-collapsed');
       applySidebarState(willCollapse);
-      writeSidebarCollapsedState(willCollapse);
+      if (!isCompactViewport()) {
+        writeSidebarCollapsedState(willCollapse);
+      }
     });
+
+    window.addEventListener('resize', syncSidebarWithViewport);
   };
 
   ns.bindUserMenu = function bindUserMenu() {
@@ -999,6 +1058,17 @@
     if (uid) store.byUid[uid] = record;
     if (email) store.byEmail[email] = record;
     writeProfileCacheStore(store);
+
+    try {
+      window.dispatchEvent(new CustomEvent('hfs:profile-updated', {
+        detail: {
+          uid,
+          email,
+          profile: Object.assign({}, record)
+        }
+      }));
+    } catch (_) {
+    }
   };
 
   ns.getCachedProfile = function getCachedProfile(authUserOrUid, maybeEmail) {

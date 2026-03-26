@@ -1016,6 +1016,7 @@
         if (!snapshot.exists()) return false;
         const updates = Object.assign({}, extra, {
           status,
+          updatedAt: getServerTimestamp(),
           technicianUpdatedAt: getServerTimestamp()
         });
         await ref.update(updates);
@@ -1029,7 +1030,7 @@
       const requests = core.readJson(core.STORAGE_KEYS.requests, []);
       const index = requests.findIndex((item) => String(item && item.id || '') === id);
       if (index < 0) return false;
-      requests[index] = Object.assign({}, requests[index], extra, { status, technicianUpdatedAt: core.nowIso() });
+      requests[index] = Object.assign({}, requests[index], extra, { status, updatedAt: core.nowIso(), technicianUpdatedAt: core.nowIso() });
       core.writeJson(core.STORAGE_KEYS.requests, requests);
       await syncScheduleLockForRequest(id, status, requests[index], 'local');
       return true;
@@ -1051,6 +1052,7 @@
 
         await ref.update({
           status: 'cancelled',
+          updatedAt: getServerTimestamp(),
           cancelledAt: getServerTimestamp()
         });
         const mergedRequest = Object.assign({ id: String(requestId || '').trim(), requestId: String(requestId || '').trim() }, data, {
@@ -1067,7 +1069,7 @@
       if (index < 0) return false;
       const status = String(requests[index].status || '').toLowerCase();
       if (status !== 'pending' && status !== 'offered' && status !== 'accepted' && status !== 'confirmed') return false;
-      requests[index] = Object.assign({}, requests[index], { status: 'cancelled', cancelledAt: core.nowIso() });
+      requests[index] = Object.assign({}, requests[index], { status: 'cancelled', updatedAt: core.nowIso(), cancelledAt: core.nowIso() });
       core.writeJson(core.STORAGE_KEYS.requests, requests);
       await syncScheduleLockForRequest(String(requestId || '').trim(), 'cancelled', requests[index], 'local');
       return true;

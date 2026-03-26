@@ -79,6 +79,11 @@
     return { path: rootPath, id, data };
   }
 
+  function readSnapshotValue(snapshot) {
+    if (!snapshot || typeof snapshot.exists !== 'function' || !snapshot.exists()) return null;
+    return snapshot.val() || {};
+  }
+
   function getDaysInMonth(month) {
     const monthMaxDays = {
       1: 31,
@@ -420,6 +425,15 @@
     return Date.now();
   }
 
+  async function safeRealtimeOnce(ref) {
+    if (!ref || typeof ref.once !== 'function') return null;
+    try {
+      return await ref.once('value');
+    } catch (_) {
+      return null;
+    }
+  }
+
   function parseTimeValue(value) {
     if (value == null) return 0;
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -461,8 +475,106 @@
     return String(value || '').trim().toLowerCase() === 'admin';
   }
 
+  const TECHNICIAN_ONLY_FIELDS = [
+    'skills',
+    'primarySkill',
+    'specialties',
+    'serviceCategories',
+    'fields',
+    'field',
+    'onboardingCompleted',
+    'onboardingCompletedAt',
+    'profileCompleted',
+    'createdByAdmin',
+    'averageRating',
+    'avgRating',
+    'ratingAverage',
+    'rating',
+    'ratingCount',
+    'reviewCount',
+    'customerReviewCount',
+    'lastRatingUpdatedAt'
+  ];
+
+  const CUSTOMER_ONLY_FIELDS = [
+    'addresses',
+    'customerCode',
+    'customerShortId'
+  ];
+
+  function hasTechnicianSpecificFields(record) {
+    const source = record && typeof record === 'object' ? record : null;
+    if (!source) return false;
+
+    const skillsValue = source.skills || source.primarySkill || source.specialties || source.serviceCategories || source.fields || source.field;
+    const hasSkills = Array.isArray(skillsValue)
+      ? skillsValue.some((entry) => String(entry || '').trim())
+      : !!String(skillsValue || '').trim();
+
+    return hasSkills
+      || source.onboardingCompleted === true
+      || source.createdByAdmin === true
+      || Object.prototype.hasOwnProperty.call(source, 'averageRating')
+      || Object.prototype.hasOwnProperty.call(source, 'avgRating')
+      || Object.prototype.hasOwnProperty.call(source, 'customerReviewCount')
+      || Object.prototype.hasOwnProperty.call(source, 'lastRatingUpdatedAt');
+  }
+
+  function isTechnicianLikeRecord(record) {
+    const source = record && typeof record === 'object' ? record : null;
+    if (!source) return false;
+    if (isTechnicianRole(source.role)) return true;
+    if (isAdminRole(source.role)) return false;
+    return hasTechnicianSpecificFields(source);
+  }
+
+  function removeFields(target, fieldNames) {
+    const output = target && typeof target === 'object' ? Object.assign({}, target) : {};
+    (Array.isArray(fieldNames) ? fieldNames : []).forEach((fieldName) => {
+      if (!fieldName) return;
+      delete output[fieldName];
+    });
+    return output;
+  }
+
+  function sanitizeRecordForRole(record, roleValue) {
+    const normalizedRole = String(roleValue || '').trim().toLowerCase();
+    let sanitized = record && typeof record === 'object' ? Object.assign({}, record) : {};
+
+    if (isCustomerRole(normalizedRole)) {
+      sanitized = removeFields(sanitized, TECHNICIAN_ONLY_FIELDS);
+      sanitized.role = 'customer';
+      return sanitized;
+    }
+
+    if (isTechnicianRole(normalizedRole)) {
+      sanitized = removeFields(sanitized, CUSTOMER_ONLY_FIELDS);
+      sanitized.role = 'technician';
+      return sanitized;
+    }
+
+    if (isAdminRole(normalizedRole)) {
+      sanitized = removeFields(sanitized, CUSTOMER_ONLY_FIELDS);
+      sanitized = removeFields(sanitized, TECHNICIAN_ONLY_FIELDS);
+      sanitized.role = 'admin';
+      return sanitized;
+    }
+
+    return sanitized;
+  }
+
   function isExplicitlyDisabled(record) {
     return !!(record && typeof record === 'object' && Object.prototype.hasOwnProperty.call(record, 'isActive') && record.isActive === false);
+  }
+
+  function isPermissionDeniedError(error) {
+    const code = String(error && error.code ? error.code : '').trim().toLowerCase();
+    const message = String(error && error.message ? error.message : '').trim().toLowerCase();
+    return code.includes('permission-denied')
+      || code.includes('permission_denied')
+      || message.includes('permission-denied')
+      || message.includes('permission_denied')
+      || message.includes("doesn't have permission");
   }
 
   function applyResolvedAccountFlags(baseData, relatedRecords) {
@@ -524,8 +636,13 @@
   async function getRealtimeAccountStatusById(rtdb, uid) {
     const cleanUid = String(uid || '').trim();
     if (!rtdb || !cleanUid) return null;
-    const snapshot = await rtdb.ref(`${RTDB_ACCOUNT_STATUS_PATH}/${cleanUid}`).once('value');
-    return snapshot && snapshot.exists() ? (snapshot.val() || {}) : null;
+    try {
+      const snapshot = await rtdb.ref(`${RTDB_ACCOUNT_STATUS_PATH}/${cleanUid}`).once('value');
+      return snapshot && snapshot.exists() ? (snapshot.val() || {}) : null;
+    } catch (error) {
+      if (isPermissionDeniedError(error)) return null;
+      throw error;
+    }
   }
 
   async function isRealtimeAccountDisabledByIdentity(rtdb, uid, email) {
@@ -567,6 +684,70 @@
     return RTDB_USERS_PATH;
   }
 
+  function buildProfileDisplayName(record) {
+    const source = record && typeof record === 'object' ? record : {};
+    const first = String(source.first_name || source.firstName || '').trim();
+    const middle = String(source.middle_name || source.middleName || '').trim();
+    const last = String(source.last_name || source.lastName || '').trim();
+    const suffix = String(source.suffix || '').trim();
+    return [first, middle, last, suffix].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  async function syncCustomerIdentityToRequestsRealtime(rtdb, uid, record) {
+    const cleanUid = String(uid || '').trim();
+    if (!rtdb || !cleanUid) return;
+
+    const source = record && typeof record === 'object' ? record : {};
+    const firstName = String(source.first_name || source.firstName || '').trim();
+    const lastName = String(source.last_name || source.lastName || '').trim();
+    const fullName = buildProfileDisplayName(source);
+    const email = core.normalizeEmail(source.email || source.emailAddress || source.email_address || '');
+
+    if (!firstName && !lastName && !fullName && !email) return;
+
+    let snapshot = null;
+    try {
+      snapshot = await rtdb.ref('requests').orderByChild('customerId').equalTo(cleanUid).once('value');
+    } catch (error) {
+      if (isPermissionDeniedError(error)) return;
+      throw error;
+    }
+
+    const requestsMap = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+    const requestIds = Object.keys(requestsMap);
+    if (!requestIds.length) return;
+
+    const updates = {};
+    const timestamp = getDbTimestamp();
+
+    requestIds.forEach((requestId) => {
+      const id = String(requestId || '').trim();
+      if (!id) return;
+      const basePath = `requests/${id}`;
+      updates[`${basePath}/customerName`] = fullName;
+      updates[`${basePath}/customerFirstName`] = firstName;
+      updates[`${basePath}/customerLastName`] = lastName;
+      updates[`${basePath}/first_name`] = firstName;
+      updates[`${basePath}/last_name`] = lastName;
+      if (email) {
+        updates[`${basePath}/customerEmail`] = email;
+      }
+      updates[`${basePath}/requestDetails/customerName`] = fullName;
+      updates[`${basePath}/requestDetails/customerFirstName`] = firstName;
+      updates[`${basePath}/requestDetails/customerLastName`] = lastName;
+      updates[`${basePath}/updatedAt`] = timestamp;
+    });
+
+    if (!Object.keys(updates).length) return;
+
+    try {
+      await rtdb.ref().update(updates);
+    } catch (error) {
+      if (isPermissionDeniedError(error)) return;
+      throw error;
+    }
+  }
+
   async function migrateAdminNodeToAdmins(rtdb, uid, sourceData) {
     const cleanUid = String(uid || '').trim();
     if (!rtdb || !cleanUid) return;
@@ -598,11 +779,11 @@
     if (!rtdb || !cleanUid) return;
 
     const source = sourceData && typeof sourceData === 'object' ? sourceData : {};
-    const payload = Object.assign({}, source, {
+    const payload = sanitizeRecordForRole(Object.assign({}, source, {
       uid: cleanUid,
       role: 'customer',
       updatedAt: getDbTimestamp()
-    });
+    }), 'customer');
 
     await rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUid}`).update(payload);
     if (source && source.addresses && typeof source.addresses === 'object') {
@@ -623,11 +804,11 @@
     if (!rtdb || !cleanUid) return;
 
     const source = sourceData && typeof sourceData === 'object' ? sourceData : {};
-    const payload = Object.assign({}, source, {
+    const payload = sanitizeRecordForRole(Object.assign({}, source, {
       uid: cleanUid,
       role: 'technician',
       updatedAt: getDbTimestamp()
-    });
+    }), 'technician');
 
     await rtdb.ref(`${RTDB_TECHNICIANS_PATH}/${cleanUid}`).update(payload);
     try {
@@ -715,16 +896,16 @@
 
     const resolved = await runLookupOnce(cacheKey, async () => {
       const [adminSnapshot, customerSnapshot, technicianSnapshot, userSnapshot] = await Promise.all([
-        rtdb.ref(`${RTDB_ADMINS_PATH}/${cleanUid}`).once('value'),
-        rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUid}`).once('value'),
-        rtdb.ref(`${RTDB_TECHNICIANS_PATH}/${cleanUid}`).once('value'),
-        rtdb.ref(`${RTDB_USERS_PATH}/${cleanUid}`).once('value')
+        safeRealtimeOnce(rtdb.ref(`${RTDB_ADMINS_PATH}/${cleanUid}`)),
+        safeRealtimeOnce(rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUid}`)),
+        safeRealtimeOnce(rtdb.ref(`${RTDB_TECHNICIANS_PATH}/${cleanUid}`)),
+        safeRealtimeOnce(rtdb.ref(`${RTDB_USERS_PATH}/${cleanUid}`))
       ]);
 
-      const adminData = adminSnapshot.exists() ? (adminSnapshot.val() || {}) : null;
-      const customerData = customerSnapshot.exists() ? (customerSnapshot.val() || {}) : null;
-      const technicianData = technicianSnapshot.exists() ? (technicianSnapshot.val() || {}) : null;
-      const userData = userSnapshot.exists() ? (userSnapshot.val() || {}) : null;
+      const adminData = adminSnapshot && adminSnapshot.exists() ? (adminSnapshot.val() || {}) : null;
+      const customerData = customerSnapshot && customerSnapshot.exists() ? (customerSnapshot.val() || {}) : null;
+      const technicianData = technicianSnapshot && technicianSnapshot.exists() ? (technicianSnapshot.val() || {}) : null;
+      const userData = userSnapshot && userSnapshot.exists() ? (userSnapshot.val() || {}) : null;
       const userRole = String(userData && userData.role ? userData.role : '').trim().toLowerCase();
 
       if (adminData) {
@@ -764,6 +945,30 @@
           path: RTDB_ADMINS_PATH,
           id: cleanUid,
           data: applyResolvedAccountFlags(Object.assign({}, userData, { uid: cleanUid, role: 'admin' }), [adminData, customerData, technicianData, userData])
+        };
+      }
+
+      if (customerData && isTechnicianLikeRecord(customerData)) {
+        await migrateTechnicianNodeToTechnicians(rtdb, cleanUid, customerData);
+        return {
+          path: RTDB_TECHNICIANS_PATH,
+          id: cleanUid,
+          data: applyResolvedAccountFlags(Object.assign({}, customerData, {
+            uid: cleanUid,
+            role: 'technician'
+          }), [adminData, customerData, technicianData, userData])
+        };
+      }
+
+      if (userData && isTechnicianLikeRecord(userData)) {
+        await migrateTechnicianNodeToTechnicians(rtdb, cleanUid, userData);
+        return {
+          path: RTDB_TECHNICIANS_PATH,
+          id: cleanUid,
+          data: applyResolvedAccountFlags(Object.assign({}, userData, {
+            uid: cleanUid,
+            role: 'technician'
+          }), [adminData, customerData, technicianData, userData])
         };
       }
 
@@ -819,28 +1024,28 @@
 
       for (let i = 0; i < fieldCandidates.length; i += 1) {
         const field = fieldCandidates[i];
-        const adminsQuery = await rtdb.ref(RTDB_ADMINS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1).once('value');
+        const adminsQuery = await safeRealtimeOnce(rtdb.ref(RTDB_ADMINS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1));
         adminsResult = snapshotToSingleRecord(adminsQuery, RTDB_ADMINS_PATH);
         if (adminsResult) break;
       }
 
       for (let i = 0; i < fieldCandidates.length; i += 1) {
         const field = fieldCandidates[i];
-        const customersQuery = await rtdb.ref(RTDB_CUSTOMERS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1).once('value');
+        const customersQuery = await safeRealtimeOnce(rtdb.ref(RTDB_CUSTOMERS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1));
         customersResult = snapshotToSingleRecord(customersQuery, RTDB_CUSTOMERS_PATH);
         if (customersResult) break;
       }
 
       for (let i = 0; i < fieldCandidates.length; i += 1) {
         const field = fieldCandidates[i];
-        const techniciansQuery = await rtdb.ref(RTDB_TECHNICIANS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1).once('value');
+        const techniciansQuery = await safeRealtimeOnce(rtdb.ref(RTDB_TECHNICIANS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1));
         techniciansResult = snapshotToSingleRecord(techniciansQuery, RTDB_TECHNICIANS_PATH);
         if (techniciansResult) break;
       }
 
       for (let i = 0; i < fieldCandidates.length; i += 1) {
         const field = fieldCandidates[i];
-        const usersQuery = await rtdb.ref(RTDB_USERS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1).once('value');
+        const usersQuery = await safeRealtimeOnce(rtdb.ref(RTDB_USERS_PATH).orderByChild(field).equalTo(cleanEmail).limitToFirst(1));
         usersResult = snapshotToSingleRecord(usersQuery, RTDB_USERS_PATH);
         if (usersResult) break;
       }
@@ -859,6 +1064,18 @@
           [adminsResult && adminsResult.data, customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
         );
         return techniciansResult;
+      }
+
+      if (customersResult && isTechnicianLikeRecord(customersResult.data)) {
+        await migrateTechnicianNodeToTechnicians(rtdb, customersResult.id, customersResult.data || {});
+        return {
+          path: RTDB_TECHNICIANS_PATH,
+          id: customersResult.id,
+          data: applyResolvedAccountFlags(
+            Object.assign({}, customersResult.data || {}, { role: 'technician' }),
+            [adminsResult && adminsResult.data, customersResult && customersResult.data, techniciansResult && techniciansResult.data, usersResult && usersResult.data]
+          )
+        };
       }
 
       if (usersResult) {
@@ -930,6 +1147,103 @@
       writeLookupCache(realtimeUserByIdCache, `id:${resolved.id}`, resolved);
     }
     return resolved;
+  }
+
+  function resolveRealtimeProfileRecord(uid, nodes) {
+    const cleanUid = String(uid || '').trim();
+    const adminData = nodes && nodes.admins ? nodes.admins : null;
+    const customerData = nodes && nodes.customers ? nodes.customers : null;
+    const technicianData = nodes && nodes.technicians ? nodes.technicians : null;
+    const userData = nodes && nodes.users ? nodes.users : null;
+    const userRole = String(userData && userData.role ? userData.role : '').trim().toLowerCase();
+    const relatedRecords = [adminData, customerData, technicianData, userData];
+
+    if (adminData) {
+      return {
+        path: RTDB_ADMINS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, adminData, {
+          uid: cleanUid,
+          role: 'admin'
+        }), relatedRecords)
+      };
+    }
+
+    if (technicianData) {
+      return {
+        path: RTDB_TECHNICIANS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, technicianData, {
+          uid: cleanUid,
+          role: isKnownRole(technicianData.role) ? String(technicianData.role).trim().toLowerCase() : 'technician'
+        }), relatedRecords)
+      };
+    }
+
+    if (userData && isTechnicianRole(userRole)) {
+      return {
+        path: RTDB_TECHNICIANS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, userData, {
+          uid: cleanUid,
+          role: 'technician'
+        }), relatedRecords)
+      };
+    }
+
+    if (userData && isAdminRole(userRole)) {
+      return {
+        path: RTDB_ADMINS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, userData, {
+          uid: cleanUid,
+          role: 'admin'
+        }), relatedRecords)
+      };
+    }
+
+    if (customerData && isTechnicianLikeRecord(customerData)) {
+      return {
+        path: RTDB_TECHNICIANS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, customerData, {
+          uid: cleanUid,
+          role: 'technician'
+        }), relatedRecords)
+      };
+    }
+
+    if (userData && isTechnicianLikeRecord(userData)) {
+      return {
+        path: RTDB_TECHNICIANS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, userData, {
+          uid: cleanUid,
+          role: 'technician'
+        }), relatedRecords)
+      };
+    }
+
+    if (customerData) {
+      return {
+        path: RTDB_CUSTOMERS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(customerData, relatedRecords)
+      };
+    }
+
+    if (userData) {
+      return {
+        path: RTDB_USERS_PATH,
+        id: cleanUid,
+        data: applyResolvedAccountFlags(Object.assign({}, userData, {
+          uid: cleanUid,
+          role: userRole || 'customer'
+        }), relatedRecords)
+      };
+    }
+
+    return null;
   }
 
   const usersDatabase = {
@@ -1090,6 +1404,105 @@
       return found ? normalizeProfileRecord({ id: found.uid, ...found }, found.uid) : null;
     },
 
+    subscribeUserProfile(uid, onData, onError) {
+      const cleanUid = String(uid || '').trim();
+      const safeOnData = typeof onData === 'function' ? onData : function () {};
+      const safeOnError = typeof onError === 'function' ? onError : function () {};
+
+      if (!cleanUid) {
+        safeOnData(null);
+        return function unsubscribe() {};
+      }
+
+      if (core.mode === 'firebase' && hasRealtimeDatabase()) {
+        const rtdb = getRealtimeDb();
+        if (!rtdb) {
+          safeOnData(null);
+          return function unsubscribe() {};
+        }
+
+        const refs = {
+          admins: rtdb.ref(`${RTDB_ADMINS_PATH}/${cleanUid}`),
+          customers: rtdb.ref(`${RTDB_CUSTOMERS_PATH}/${cleanUid}`),
+          technicians: rtdb.ref(`${RTDB_TECHNICIANS_PATH}/${cleanUid}`),
+          users: rtdb.ref(`${RTDB_USERS_PATH}/${cleanUid}`)
+        };
+        const state = {
+          admins: null,
+          customers: null,
+          technicians: null,
+          users: null
+        };
+        let didEmit = false;
+
+        function emitResolved() {
+          const resolved = resolveRealtimeProfileRecord(cleanUid, state);
+          const profile = resolved && resolved.data
+            ? normalizeProfileRecord(Object.assign({ id: cleanUid }, resolved.data), cleanUid)
+            : null;
+
+          if (profile) {
+            invalidateRealtimeLookupCache(cleanUid, profile.email || '');
+            writeLookupCache(realtimeUserByIdCache, `id:${cleanUid}`, resolved);
+            const cleanEmail = core.normalizeEmail(profile.email || '');
+            if (cleanEmail) {
+              writeLookupCache(realtimeUserByEmailCache, `email:${cleanEmail}`, resolved);
+            }
+          }
+
+          didEmit = true;
+          safeOnData(profile);
+        }
+
+        function handleSnapshot(key, snapshot) {
+          state[key] = readSnapshotValue(snapshot);
+          emitResolved();
+        }
+
+        function handleFailure(error) {
+          const code = String(error && error.code ? error.code : '').toLowerCase();
+          if (code.includes('permission-denied')) {
+            emitResolved();
+            return;
+          }
+          safeOnError(error);
+        }
+
+        const listeners = Object.keys(refs).map((key) => {
+          const ref = refs[key];
+          const listener = (snapshot) => handleSnapshot(key, snapshot);
+          ref.on('value', listener, handleFailure);
+          return { key, ref, listener };
+        });
+
+        Promise.all(Object.keys(refs).map(async (key) => {
+          state[key] = readSnapshotValue(await safeRealtimeOnce(refs[key]));
+        })).then(() => {
+          if (!didEmit) emitResolved();
+        }).catch(() => {
+          if (!didEmit) emitResolved();
+        });
+
+        return function unsubscribe() {
+          listeners.forEach(({ ref, listener }) => {
+            if (!ref || typeof ref.off !== 'function') return;
+            ref.off('value', listener);
+          });
+        };
+      }
+
+      let cancelled = false;
+      this.getUserById(cleanUid).then((profile) => {
+        if (!cancelled) safeOnData(profile);
+      }).catch((error) => {
+        if (!cancelled) safeOnError(error);
+      });
+
+      return function unsubscribe() {
+        cancelled = true;
+      };
+    },
+
     async updateUserProfile(uid, updates) {
       const normalizedUpdates = normalizeProfileFields(updates);
       assertValidBirthdate(normalizedUpdates);
@@ -1101,11 +1514,15 @@
           if (!cleanUid) return false;
           const existingResolved = await getRealtimeUserRecordById(rtdb, cleanUid);
           const existing = existingResolved && existingResolved.data ? existingResolved.data : null;
+          const existingRole = String(existing && existing.role ? existing.role : '').trim().toLowerCase();
 
           const data = Object.assign({}, normalizedUpdates);
           let resolvedRole = '';
           if (existing) {
-            if (isKnownRole(requestedRole)) {
+            const shouldPreserveExistingRole = isCustomerRole(requestedRole)
+              && (isTechnicianRole(existingRole) || isAdminRole(existingRole));
+
+            if (isKnownRole(requestedRole) && !shouldPreserveExistingRole) {
               data.role = requestedRole;
             } else if (Object.prototype.hasOwnProperty.call(existing, 'role') && existing.role != null) {
               data.role = existing.role;
@@ -1132,9 +1549,10 @@
           }
 
           data.updatedAt = getDbTimestamp();
+          const sanitizedData = sanitizeRecordForRole(data, resolvedRole || data.role);
 
-          const targetRoot = getPreferredUserRootByRole(resolvedRole || data.role);
-          await rtdb.ref(`${targetRoot}/${cleanUid}`).update(data);
+          const targetRoot = getPreferredUserRootByRole(resolvedRole || sanitizedData.role || data.role);
+          await rtdb.ref(`${targetRoot}/${cleanUid}`).update(sanitizedData);
 
           if (isCustomerRole(resolvedRole)) {
             try {
@@ -1149,6 +1567,7 @@
               await rtdb.ref(`${RTDB_TECHNICIANS_PATH}/${cleanUid}`).remove();
             } catch (_) {
             }
+            await syncCustomerIdentityToRequestsRealtime(rtdb, cleanUid, Object.assign({}, existing || {}, sanitizedData));
           } else if (isTechnicianRole(resolvedRole)) {
             try {
               await rtdb.ref(`${RTDB_ADMINS_PATH}/${cleanUid}`).remove();
@@ -1190,7 +1609,7 @@
             } catch (_) {
             }
           }
-          invalidateRealtimeLookupCache(cleanUid, data.email || (existing && (existing.email || existing.emailAddress || existing.email_address)));
+          invalidateRealtimeLookupCache(cleanUid, sanitizedData.email || data.email || (existing && (existing.email || existing.emailAddress || existing.email_address)));
           return true;
         }
 
@@ -1414,8 +1833,7 @@
         try {
           return await isRealtimeAccountDisabledByIdentity(rtdb, uid, email);
         } catch (error) {
-          const code = String(error && error.code ? error.code : '').toLowerCase();
-          if (code.includes('permission-denied')) return true;
+          if (isPermissionDeniedError(error)) return false;
           throw error;
         }
       }

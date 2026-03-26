@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Technician — HomeFixSolution</title>
   <link rel="stylesheet" href="../../css/technician/layout/dashboard.css?v=20260322c">
-  <link rel="stylesheet" href="../../css/technician/pages/dashboard/index.css?v=20260323j">
+  <link rel="stylesheet" href="../../css/technician/pages/dashboard/index.css?v=20260326d">
 </head>
 <body>
   <div class="app-shell">
@@ -101,6 +101,9 @@
                 </div>
                 <div class="tech-messages-chat-list" id="techMessagesChatList">
                   <div class="tech-chat-empty">No messages yet.</div>
+                </div>
+                <div class="tech-messages-inactive" id="techMessagesInactive" hidden>
+                  Select an accepted request to start chatting with the customer.
                 </div>
                 <form class="tech-messages-chat-form" id="techMessagesChatForm" novalidate>
                   <input type="file" id="techMessagesAttachmentInput" class="tech-chat-attachment-input" accept="image/*,video/*" hidden>
@@ -407,6 +410,10 @@
         <button type="button" class="tech-modal-close" id="techDetailCloseBtn" aria-label="Close details">✕</button>
       </div>
       <div class="tech-modal-body">
+        <p><strong>Media Attachment:</strong></p>
+        <div class="tech-detail-media" id="techDetailMediaPreview">
+          <div class="tech-detail-media-empty">No attachment</div>
+        </div>
         <p><strong>Request:</strong> <span id="techDetailRequest">-</span></p>
         <p><strong>Request ID:</strong> <span id="techDetailRequestId">-</span></p>
         <p><strong>Status:</strong> <span id="techDetailStatus">-</span></p>
@@ -417,7 +424,7 @@
         <p><strong>Schedule:</strong> <span id="techDetailSchedule">-</span></p>
         <p><strong>Location:</strong> <span id="techDetailLocation">-</span></p>
         <p><strong>Details:</strong> <span id="techDetailDetails">-</span></p>
-        <p><strong>Media Attachment:</strong> <span id="techDetailMedia">-</span></p>
+        <p><strong>Attachment Summary:</strong> <span id="techDetailMedia">-</span></p>
 
       </div>
       <div class="tech-modal-actions">
@@ -457,7 +464,7 @@
   <script src="../../databasehfs/users/user-profile-database.js?v=20260323g"></script>
   <script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
   <script src="../../databasehfs/users/user-database.js?v=20260323g"></script>
-  <script src="../../Js/technician/dashboard/parts/core.js?v=20260323i"></script>
-  <script src="../../Js/technician/dashboard/main.js?v=20260323l"></script>
+  <script src="../../Js/technician/dashboard/parts/core.js?v=20260326a"></script>
+  <script src="../../Js/technician/dashboard/main.js?v=20260326d"></script>
 </body>
 </html>

@@ -44,6 +44,20 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeProfile = null;
   let isEditing = false;
 
+  function applyActiveProfile(profile, user, preserveEditingState) {
+    activeProfile = Object.assign({}, activeProfile || {}, profile || {}, {
+      uid: String(((profile && profile.uid) || (profile && profile.id) || (user && user.uid) || '')).trim(),
+      email: String(((profile && profile.email) || (activeProfile && activeProfile.email) || (user && user.email) || '')).trim().toLowerCase()
+    });
+
+    ns.renderProfile(activeProfile, user, refs);
+    updateTopbarName(activeProfile, user);
+    if (!preserveEditingState || !isEditing) {
+      ns.fillInputs(activeProfile, refs);
+      setSelectedSuffixValue(activeProfile && activeProfile.suffix);
+    }
+  }
+
   function normalizeText(value) {
     return String(value == null ? '' : value).trim();
   }
@@ -106,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : String((profile && profile.first_name) || (user && user.email) || 'User');
     topbarBtn.innerHTML = `${name} <span class="caret">▼</span>`;
   }
+
 
   ns.bindBirthdateAutoFormat(refs.editBirthdate);
 
@@ -355,10 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
         uid: activeUser.uid,
         email: String((activeProfile && activeProfile.email) || (activeUser && activeUser.email) || '').trim().toLowerCase()
       });
-      saveCachedProfile(activeProfile, activeUser);
-      ns.renderProfile(activeProfile, activeUser, refs);
 
-      updateTopbarName(activeProfile, activeUser);
+      saveCachedProfile(activeProfile, activeUser);
+      applyActiveProfile(activeProfile, activeUser, false);
       setInlineEditing(false);
       if (!cloudSaved) {
         refs.errorEl.textContent = 'Saved locally on this device. Cloud profile sync is restricted by permissions.';
@@ -469,18 +483,26 @@ document.addEventListener('DOMContentLoaded', () => {
           updatedAt: serverTs
         };
 
-        await Promise.all([
-          rtdb.ref(`users/${user.uid}`).update(upsertPayload),
-          rtdb.ref(`customers/${user.uid}`).update(upsertPayload)
-        ]);
+        await rtdb.ref(`customers/${user.uid}`).update(upsertPayload);
+        try {
+          await rtdb.ref(`users/${user.uid}`).remove();
+        } catch (_) {
+        }
       }
     } catch (_) {
     }
 
-    ns.renderProfile(activeProfile, user, refs);
-    updateTopbarName(activeProfile, user);
-    ns.fillInputs(activeProfile, refs);
-    setSelectedSuffixValue(activeProfile && activeProfile.suffix);
+    applyActiveProfile(activeProfile, user, false);
     setInlineEditing(false);
+  });
+
+  window.addEventListener('hfs:profile-updated', (event) => {
+    if (!activeUser) return;
+    const detail = event && event.detail ? event.detail : {};
+    const uid = String(detail && detail.uid ? detail.uid : '').trim();
+    if (uid && uid !== String(activeUser.uid || '').trim()) return;
+    const nextProfile = detail && detail.profile ? detail.profile : null;
+    if (!nextProfile) return;
+    applyActiveProfile(nextProfile, activeUser, true);
   });
 });

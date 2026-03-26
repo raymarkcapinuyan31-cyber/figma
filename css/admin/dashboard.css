@@ -539,6 +539,11 @@ body {
 }
 
 #admin-profile .panel-head,
+#admin-profile .settings-grid {
+	max-width: 1040px;
+}
+
+#admin-profile .panel-head,
 #admin-password .panel-head {
 	margin-bottom: 24px;
 }
@@ -546,6 +551,27 @@ body {
 #admin-profile .settings-grid,
 #admin-password .settings-grid {
 	grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-profile-form {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	width: 100%;
+}
+
+.admin-profile-form-message {
+	grid-column: 1 / -1;
+	margin-top: -4px;
+}
+
+.admin-profile-tile {
+	height: 100%;
+}
+
+.admin-profile-tile .settings-form {
+	height: calc(100% - 38px);
+	align-content: start;
 }
 
 .settings-card {
@@ -577,6 +603,19 @@ body {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(180px, 1fr));
 	gap: 12px;
+}
+
+.settings-form-stacked {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-section-label {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #61758b;
 }
 
 .settings-form label {
@@ -613,6 +652,12 @@ body {
 	background: #fff7f7;
 }
 
+.settings-form input.valid {
+	border-color: #2f9e64;
+	background: #f3fcf7;
+	box-shadow: 0 0 0 3px rgba(47, 158, 100, 0.18);
+}
+
 .settings-form .full,
 .settings-note,
 .settings-actions,
@@ -621,12 +666,63 @@ body {
 	grid-column: 1 / -1;
 }
 
+.settings-password-rules {
+	grid-column: 1 / -1;
+	margin: 2px 0 8px;
+	padding: 8px 10px;
+	border: 1px solid #dbe6f3;
+	border-radius: 8px;
+	background: #fff;
+}
+
+.settings-password-rules-title {
+	margin: 0 0 4px;
+	font-size: 11px;
+	font-weight: 700;
+	color: #223a53;
+}
+
+.settings-password-rules-list {
+	margin: 0;
+	padding-left: 16px;
+	display: grid;
+	gap: 2px;
+}
+
+.settings-password-rules-list li {
+	font-size: 11px;
+	color: #7a8797;
+	line-height: 1.35;
+}
+
+.settings-password-rules-list li.met {
+	color: #22753e;
+	text-shadow: 0 0 6px rgba(34, 117, 62, 0.35);
+	font-weight: 700;
+}
+
+.settings-email-input-wrap {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.settings-email-input-wrap input {
+	width: 100%;
+}
+
 .settings-inline-actions,
 .settings-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 10px;
 	align-items: center;
+}
+
+@media (max-width: 900px) {
+	.admin-profile-form {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .settings-static {
@@ -661,9 +757,22 @@ body {
 	color: #4f6074;
 }
 
+.settings-email-verified-status {
+	display: block;
+	margin-top: -4px;
+	min-height: 18px;
+	color: #8a98a9;
+	font-weight: 600;
+	opacity: 0.55;
+	transition: color 0.2s ease, text-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+
 .settings-note.verified {
 	color: #1f6c3b;
 	font-weight: 600;
+	opacity: 1;
+	text-shadow: 0 0 10px rgba(31, 108, 59, 0.12);
 }
 
 .settings-note.verified::before {
@@ -687,6 +796,7 @@ body {
 	color: #5c6e81;
 	cursor: default;
 }
+
 
 .backup-card {
 	display: flex;

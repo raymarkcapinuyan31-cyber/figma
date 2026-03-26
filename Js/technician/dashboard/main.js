@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeMessagesRequestId = '';
   let activeAcceptedMessageRequests = [];
   let historyJobsPage = 1;
-  let historyJobsPerPage = 10;
+  let historyJobsPerPage = 7;
   let activeOpenJobsFilter = 'waiting';
   let activeHistoryJobsFilter = 'all';
   let ratingsPage = 1;
@@ -1704,6 +1704,98 @@ document.addEventListener('DOMContentLoaded', () => {
     return `chats/${String(requestId || '').trim()}`;
   }
 
+  function getLegacyRequestChatPath(requestId) {
+    return `requestChats/${String(requestId || '').trim()}`;
+  }
+
+  function mergeRealtimeChatEntries(primaryEntries, legacyEntries) {
+    const mergedById = new Map();
+
+    function mergeOne(entry) {
+      if (!entry || typeof entry !== 'object') return;
+      const id = String(entry.id || '').trim();
+      if (!id) return;
+      const existing = mergedById.get(id);
+      if (!existing) {
+        mergedById.set(id, entry);
+        return;
+      }
+      const existingTime = toTimeValue(existing && existing.createdAt);
+      const nextTime = toTimeValue(entry && entry.createdAt);
+      if (nextTime >= existingTime) {
+        mergedById.set(id, entry);
+      }
+    }
+
+    (Array.isArray(primaryEntries) ? primaryEntries : []).forEach(mergeOne);
+    (Array.isArray(legacyEntries) ? legacyEntries : []).forEach(mergeOne);
+
+    const entries = Array.from(mergedById.values());
+    entries.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    return entries;
+  }
+
+  function subscribeMergedRealtimeChat(rtdb, requestId, onEntries, onError) {
+    const state = {
+      primary: [],
+      legacy: [],
+      primaryErrored: false,
+      legacyErrored: false
+    };
+
+    const emit = () => {
+      onEntries(mergeRealtimeChatEntries(state.primary, state.legacy));
+    };
+
+    const primaryRef = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
+    const legacyRef = rtdb.ref(getLegacyRequestChatPath(requestId)).limitToLast(200);
+
+    const makeOnValue = (key) => (snapshot) => {
+      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
+      state[key] = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
+      emit();
+    };
+
+    const onPrimaryValue = makeOnValue('primary');
+    const onLegacyValue = makeOnValue('legacy');
+
+    const onPrimaryError = (error) => {
+      state.primaryErrored = true;
+      emit();
+      if (state.legacyErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+    const onLegacyError = (error) => {
+      state.legacyErrored = true;
+      emit();
+      if (state.primaryErrored && typeof onError === 'function') {
+        onError(error);
+      }
+    };
+
+    primaryRef.on('value', onPrimaryValue, onPrimaryError);
+    legacyRef.on('value', onLegacyValue, onLegacyError);
+
+    return () => {
+      primaryRef.off('value', onPrimaryValue);
+      legacyRef.off('value', onLegacyValue);
+    };
+  }
+
+  async function pushChatMessageWithMobileSync(rtdb, requestId, messagePayload) {
+    const primaryRef = rtdb.ref(getRequestChatPath(requestId)).push();
+    const messageId = primaryRef && primaryRef.key ? String(primaryRef.key).trim() : '';
+    await primaryRef.set(messagePayload);
+
+    if (!messageId) return;
+
+    try {
+      await rtdb.ref(`${getLegacyRequestChatPath(requestId)}/${messageId}`).set(messagePayload);
+    } catch (_) {
+    }
+  }
+
   function getMessageTimeLabel(value) {
     const time = toTimeValue(value);
     if (!time) return '';
@@ -1973,7 +2065,7 @@ document.addEventListener('DOMContentLoaded', () => {
           messagePayload.mediaDataUrl = String(attachment.mediaDataUrl || '').trim();
         }
 
-        await rtdb.ref(getRequestChatPath(requestId)).push(messagePayload);
+        await pushChatMessageWithMobileSync(rtdb, requestId, messagePayload);
 
         if (normalizeSpaces(input.value) === text) {
           input.value = '';
@@ -1997,21 +2089,14 @@ document.addEventListener('DOMContentLoaded', () => {
       await sendMessage({ text });
     });
 
-    const ref = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
-    const onValue = (snapshot) => {
-      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
-      const items = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
-      items.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    const onValue = (items) => {
       renderRequestChatMessages(items, technicianUid);
     };
     const onError = () => {
       list.innerHTML = '<div class="tech-chat-empty">Unable to load chat messages.</div>';
     };
 
-    ref.on('value', onValue, onError);
-    unsubscribeRequestChat = () => {
-      ref.off('value', onValue);
-    };
+    unsubscribeRequestChat = subscribeMergedRealtimeChat(rtdb, requestId, onValue, onError);
 
     form.onsubmit = async (event) => {
       event.preventDefault();
@@ -2104,6 +2189,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const empty = document.getElementById('techMessagesMainEmpty');
     const conversation = document.getElementById('techMessagesConversation');
     const list = document.getElementById('techMessagesChatList');
+    const inactive = document.getElementById('techMessagesInactive');
+    const form = document.getElementById('techMessagesChatForm');
     const input = document.getElementById('techMessagesChatInput');
     const sendBtn = document.getElementById('techMessagesChatSendBtn');
     const attachBtn = document.getElementById('techMessagesAttachBtn');
@@ -2118,11 +2205,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (input) input.disabled = !enabled;
     if (sendBtn) sendBtn.disabled = !enabled;
     if (attachBtn) attachBtn.disabled = !enabled;
+    if (form) form.hidden = !enabled;
+    if (inactive) inactive.hidden = enabled;
 
     if (!enabled) {
       if (title) title.textContent = 'Request';
-      if (meta) meta.textContent = 'Accepted request chat';
-      if (list) list.innerHTML = '<div class="tech-chat-empty">No messages yet.</div>';
+      if (meta) meta.textContent = 'Waiting for accepted request';
+      if (input) input.value = '';
+      if (list) list.innerHTML = '<div class="tech-chat-empty">No chat selected yet.</div>';
     }
   }
 
@@ -2225,7 +2315,7 @@ document.addEventListener('DOMContentLoaded', () => {
           messagePayload.mediaDataUrl = String(attachment.mediaDataUrl || '').trim();
         }
 
-        await rtdb.ref(getRequestChatPath(requestId)).push(messagePayload);
+        await pushChatMessageWithMobileSync(rtdb, requestId, messagePayload);
 
         if (normalizeSpaces(input.value) === text) {
           input.value = '';
@@ -2249,11 +2339,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await sendMessage({ text });
     });
 
-    const ref = rtdb.ref(getRequestChatPath(requestId)).limitToLast(200);
-    const onValue = (snapshot) => {
-      const value = snapshot && typeof snapshot.val === 'function' ? (snapshot.val() || {}) : {};
-      const items = Object.keys(value).map((id) => Object.assign({ id }, value[id] || {}));
-      items.sort((a, b) => toTimeValue(a && a.createdAt) - toTimeValue(b && b.createdAt));
+    const onValue = (items) => {
 
       if (!items.length) {
         list.innerHTML = '<div class="tech-chat-empty">No messages yet.</div>';
@@ -2272,10 +2358,7 @@ document.addEventListener('DOMContentLoaded', () => {
       list.innerHTML = '<div class="tech-chat-empty">Unable to load chat messages.</div>';
     };
 
-    ref.on('value', onValue, onError);
-    unsubscribeMessagesChat = () => {
-      ref.off('value', onValue);
-    };
+    unsubscribeMessagesChat = subscribeMergedRealtimeChat(rtdb, requestId, onValue, onError);
 
     form.onsubmit = async (event) => {
       event.preventDefault();
@@ -2636,24 +2719,125 @@ document.addEventListener('DOMContentLoaded', () => {
     return fallback || 'No additional details provided';
   }
 
-  function getMediaAttachmentSummary(item) {
+  function isImageAttachmentType(value) {
+    const type = normalizeSpaces(value).toLowerCase();
+    return type.startsWith('image/') || /(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.svg)$/.test(type);
+  }
+
+  function isVideoAttachmentType(value) {
+    const type = normalizeSpaces(value).toLowerCase();
+    return type.startsWith('video/') || /(\.mp4|\.mov|\.webm|\.m4v|\.avi|\.mkv)$/.test(type);
+  }
+
+  function getRequestMediaEntries(item) {
     const candidates = [
+      item && item.media,
       item && item.mediaAttachments,
       item && item.attachments,
-      item && item.media,
       item && item.images,
       item && item.photos
     ];
 
+    const all = [];
     for (const bucket of candidates) {
-      if (Array.isArray(bucket) && bucket.length) {
-        const first = normalizeSpaces(bucket[0]);
-        if (bucket.length === 1) return first || '1 attachment';
-        return first ? `${first} (+${bucket.length - 1} more)` : `${bucket.length} attachments`;
-      }
+      if (!Array.isArray(bucket) || !bucket.length) continue;
+      bucket.forEach((entry, index) => {
+        if (typeof entry === 'string') {
+          const text = normalizeSpaces(entry);
+          if (!text) return;
+          const isLikelyLink = /^(https?:\/\/|data:)/i.test(text);
+          all.push({
+            name: `Attachment ${index + 1}`,
+            type: '',
+            url: isLikelyLink ? text : '',
+            preview: isLikelyLink ? text : '',
+            fallbackText: text
+          });
+          return;
+        }
+
+        if (!entry || typeof entry !== 'object') return;
+        const type = normalizeSpaces(entry.type || entry.mediaType || entry.mimeType).toLowerCase();
+        const rawUrl = normalizeSpaces(entry.url || entry.downloadURL || entry.downloadUrl || entry.mediaDataUrl);
+        const rawPreview = normalizeSpaces(entry.thumbnailUrl || entry.previewUrl || entry.dataUrl || rawUrl);
+        const link = /^(https?:\/\/|data:)/i.test(rawUrl) ? rawUrl : '';
+        const preview = /^(https?:\/\/|data:image\/|data:video\/)/i.test(rawPreview) ? rawPreview : link;
+        const name = normalizeSpaces(entry.name || entry.fileName || entry.filename) || `Attachment ${index + 1}`;
+
+        all.push({
+          name,
+          type,
+          url: link,
+          preview,
+          fallbackText: name
+        });
+      });
     }
 
-    return 'No attachment';
+    if (!all.length) return [];
+    all.sort((left, right) => {
+      const leftImage = isImageAttachmentType(left.type || left.preview || left.url || left.name);
+      const rightImage = isImageAttachmentType(right.type || right.preview || right.url || right.name);
+      if (leftImage !== rightImage) return leftImage ? -1 : 1;
+
+      const leftVideo = isVideoAttachmentType(left.type || left.preview || left.url || left.name);
+      const rightVideo = isVideoAttachmentType(right.type || right.preview || right.url || right.name);
+      if (leftVideo !== rightVideo) return leftVideo ? 1 : -1;
+      return 0;
+    });
+
+    return all;
+  }
+
+  function buildTechRequestMediaMarkup(item) {
+    const media = getRequestMediaEntries(item);
+    if (!media.length) {
+      return '<div class="tech-detail-media-empty">No attachment</div>';
+    }
+
+    return media.map((entry, index) => {
+      const safeName = escapeHtml(entry.name || `Attachment ${index + 1}`);
+      const typeHint = `${entry.type || entry.preview || entry.url || entry.name || ''}`.toLowerCase();
+      const isVideo = isVideoAttachmentType(typeHint);
+      const isImage = isImageAttachmentType(typeHint);
+      const linkTarget = entry.url || entry.preview;
+
+      if (isImage && entry.preview) {
+        return `
+          <a class="tech-detail-media-item" href="${escapeHtml(linkTarget || entry.preview)}" target="_blank" rel="noopener noreferrer" title="${safeName}">
+            <img src="${escapeHtml(entry.preview)}" alt="${safeName}" loading="lazy">
+          </a>
+        `;
+      }
+
+      if (isVideo) {
+        if (linkTarget) {
+          return `
+            <a class="tech-detail-media-item tech-detail-media-video" href="${escapeHtml(linkTarget)}" target="_blank" rel="noopener noreferrer" title="${safeName}">
+              <span>▶ Video</span>
+            </a>
+          `;
+        }
+        return '<div class="tech-detail-media-item tech-detail-media-video"><span>▶ Video</span></div>';
+      }
+
+      if (linkTarget) {
+        return `
+          <a class="tech-detail-media-item tech-detail-media-file" href="${escapeHtml(linkTarget)}" target="_blank" rel="noopener noreferrer" title="${safeName}">
+            <span>${safeName}</span>
+          </a>
+        `;
+      }
+
+      return `<div class="tech-detail-media-item tech-detail-media-file"><span>${escapeHtml(entry.fallbackText || `Attachment ${index + 1}`)}</span></div>`;
+    }).join('');
+  }
+
+  function getMediaAttachmentSummary(item) {
+    const media = getRequestMediaEntries(item);
+    if (!media.length) return 'No attachment';
+    if (media.length === 1) return media[0].name || '1 attachment';
+    return `${media.length} attachments`;
   }
 
   function buildLocationFromAddressObject(value) {
@@ -2676,10 +2860,58 @@ document.addEventListener('DOMContentLoaded', () => {
     return normalizeSpaces(parts.join(', '));
   }
 
-  function getRequestLocationText(item) {
+  function getRequestLocationLines(item) {
     const details = item && item.requestDetails && typeof item.requestDetails === 'object'
       ? item.requestDetails
       : {};
+
+    const locationObjectCandidates = [
+      item && item.location,
+      item && item.selectedAddress,
+      item && item.addressDetails,
+      item && item.serviceAddress,
+      item && item.savedAddress,
+      item && item.addressObject,
+      details.location,
+      details.address,
+      details.selectedAddress,
+      details.addressDetails,
+      details.serviceAddress,
+      details.addressObject
+    ];
+
+    const locationObject = locationObjectCandidates.find((entry) => entry && typeof entry === 'object') || null;
+    if (locationObject) {
+      const bookingTypeRaw = String((item && (item.bookingType || item.serviceType)) || '').toLowerCase();
+      const isStoreDropOff = bookingTypeRaw.includes('appoint');
+
+      const houseUnit = normalizeSpaces(locationObject.houseUnit || locationObject.houseNo || locationObject.line1 || locationObject.label || '');
+      const streetName = normalizeSpaces(locationObject.streetName || locationObject.street || '');
+      const barangay = normalizeSpaces(locationObject.barangay || locationObject.district || '');
+      const city = normalizeSpaces(locationObject.city || locationObject.province || 'Dagupan City');
+      const additional = normalizeSpaces(locationObject.additionalDetails || locationObject.landmark || locationObject.note || locationObject.line2 || '');
+
+      if (isStoreDropOff) {
+        const lines = [];
+        if (houseUnit) lines.push(houseUnit);
+        if (streetName) lines.push(streetName);
+        const locationLine = [barangay, city].filter(Boolean).join(', ').trim();
+        if (locationLine) lines.push(locationLine);
+        if (additional) lines.push(additional);
+        if (lines.length) return lines;
+      } else {
+        const lines = [];
+        if (houseUnit) lines.push(houseUnit);
+        if (streetName) lines.push(streetName);
+        if (barangay) lines.push(barangay);
+        if (city) lines.push(city);
+        if (additional) lines.push(additional);
+        if (lines.length) return lines;
+      }
+
+      const fallbackObjectText = buildLocationFromAddressObject(locationObject);
+      if (fallbackObjectText) return [fallbackObjectText];
+    }
 
     const directStringCandidates = [
       item && item.location,
@@ -2698,27 +2930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const direct = directStringCandidates
       .map((entry) => safeText(entry))
       .find(Boolean);
-    if (direct) return direct;
-
-    const objectCandidates = [
-      item && item.location,
-      item && item.selectedAddress,
-      item && item.addressDetails,
-      item && item.serviceAddress,
-      item && item.savedAddress,
-      item && item.addressObject,
-      details.selectedAddress,
-      details.addressDetails,
-      details.serviceAddress,
-      details.addressObject,
-      details.location,
-      details.address
-    ];
-
-    for (const candidate of objectCandidates) {
-      const parsed = buildLocationFromAddressObject(candidate);
-      if (parsed) return parsed;
-    }
+    if (direct) return [direct];
 
     const composed = normalizeSpaces([
       item && item.street,
@@ -2726,8 +2938,13 @@ document.addEventListener('DOMContentLoaded', () => {
       item && item.city,
       item && item.province
     ].filter(Boolean).join(', '));
+    if (composed) return [composed];
 
-    return composed || '';
+    return ['No location provided'];
+  }
+
+  function getRequestLocationText(item) {
+    return getRequestLocationLines(item).join(', ');
   }
 
   function getTechnicianNameCandidates(profile) {
@@ -3479,7 +3696,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const perPage = Number.isFinite(Number(historyJobsPerPage)) ? Math.max(1, Number(historyJobsPerPage)) : 10;
+    const perPage = Number.isFinite(Number(historyJobsPerPage)) ? Math.max(1, Number(historyJobsPerPage)) : 7;
     const totalItems = items.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
     historyJobsPage = Math.min(Math.max(historyJobsPage, 1), totalPages);
@@ -3604,6 +3821,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const normalizedNextStatus = String(nextStatus || '').toLowerCase();
     const targetItem = technicianRequestLookup.get(id);
     const completionTimestamp = Date.now();
+    const assignedTechnicianFirstName = normalizeSpaces(activeTechnicianProfile && (activeTechnicianProfile.first_name || activeTechnicianProfile.firstName) || '');
+    const assignedTechnicianLastName = normalizeSpaces(activeTechnicianProfile && (activeTechnicianProfile.last_name || activeTechnicianProfile.lastName) || '');
+    const assignedTechnicianName = normalizeSpaces(
+      buildPersonFullName(activeTechnicianProfile || {})
+      || activeTechnicianProfile && (activeTechnicianProfile.name || activeTechnicianProfile.fullName || activeTechnicianProfile.displayName)
+      || [assignedTechnicianFirstName, assignedTechnicianLastName].filter(Boolean).join(' ')
+    );
     const metaUpdates = normalizedNextStatus === 'completed'
       ? {
           completedAt: completionTimestamp,
@@ -3630,6 +3854,51 @@ document.addEventListener('DOMContentLoaded', () => {
         : null;
       const techUid = String(activeTechnicianProfile && activeTechnicianProfile.uid ? activeTechnicianProfile.uid : '').trim();
       const techEmail = String(activeTechnicianProfile && activeTechnicianProfile.email ? activeTechnicianProfile.email : '').trim().toLowerCase();
+
+      const applyAssignedTechnicianPayload = (current) => {
+        const request = current && typeof current === 'object' ? current : {};
+        const nextDetails = request.requestDetails && typeof request.requestDetails === 'object'
+          ? Object.assign({}, request.requestDetails)
+          : {};
+
+        request.status = 'accepted';
+        request.assignedTechnicianId = techUid;
+        request.technicianId = techUid;
+        request.assignedToUid = techUid;
+        request.assignedTo = techUid;
+        request.assignedTechnicianEmail = techEmail;
+        request.technicianEmail = techEmail;
+        request.assignedToEmail = techEmail;
+
+        if (assignedTechnicianName) {
+          request.assignedTechnicianName = assignedTechnicianName;
+          request.technicianName = assignedTechnicianName;
+          request.assignedToName = assignedTechnicianName;
+          nextDetails.selectedTechnicianName = assignedTechnicianName;
+          nextDetails.assignedTechnicianName = assignedTechnicianName;
+        }
+
+        if (assignedTechnicianFirstName) {
+          request.assignedTechnicianFirstName = assignedTechnicianFirstName;
+          request.technicianFirstName = assignedTechnicianFirstName;
+        }
+
+        if (assignedTechnicianLastName) {
+          request.assignedTechnicianLastName = assignedTechnicianLastName;
+          request.technicianLastName = assignedTechnicianLastName;
+        }
+
+        nextDetails.selectedTechnicianId = techUid;
+        nextDetails.assignedTechnicianId = techUid;
+        nextDetails.selectedTechnicianEmail = techEmail;
+        nextDetails.assignedTechnicianEmail = techEmail;
+
+        request.requestDetails = nextDetails;
+        request.acceptedAt = request.acceptedAt || completionTimestamp;
+        request.updatedAt = completionTimestamp;
+        request.technicianUpdatedAt = completionTimestamp;
+        return request;
+      };
 
       if (rtdb && techUid) {
         let didClaim = false;
@@ -3658,12 +3927,7 @@ document.addEventListener('DOMContentLoaded', () => {
               if (status === 'offered' || status === 'pending') {
                 current.status = 'accepted';
               }
-              current.assignedTechnicianId = techUid;
-              current.technicianId = techUid;
-              current.assignedTechnicianEmail = techEmail;
-              current.technicianEmail = techEmail;
-              current.technicianUpdatedAt = Date.now();
-              return current;
+              return applyAssignedTechnicianPayload(current);
             }
 
             if (alreadyAssigned) {
@@ -3675,13 +3939,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             didClaim = true;
-            current.status = 'accepted';
-            current.assignedTechnicianId = techUid;
-            current.technicianId = techUid;
-            current.assignedTechnicianEmail = techEmail;
-            current.technicianEmail = techEmail;
-            current.technicianUpdatedAt = Date.now();
-            return current;
+            return applyAssignedTechnicianPayload(current);
           });
 
           if (!didClaim || !result || !result.committed) {
@@ -3733,6 +3991,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById('techDetailModal');
     const doneBtn = document.getElementById('techDetailDoneBtn');
     const chatBtn = document.getElementById('techDetailChatBtn');
+    const mediaPreview = document.getElementById('techDetailMediaPreview');
     const item = technicianRequestLookup.get(String(requestId || ''));
     if (!modal || !item) return;
 
@@ -3748,9 +4007,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setDetailText('techDetailCategory', getCategoryLabel(item));
     setDetailText('techDetailRepairConcern', getRepairConcern(item));
     setDetailText('techDetailSchedule', getScheduleText(item) || safeText(details.preferredSchedule) || safeText(details.preferred_datetime) || 'No schedule set');
-    setDetailText('techDetailLocation', getRequestLocationText(item) || 'No location provided');
+    setDetailText('techDetailLocation', getRequestLocationLines(item).join('\n'));
     setDetailText('techDetailDetails', getRequestDetailsText(item));
     setDetailText('techDetailMedia', getMediaAttachmentSummary(item));
+    if (mediaPreview) {
+      mediaPreview.innerHTML = buildTechRequestMediaMarkup(item);
+    }
 
     activeDetailRequestId = String(item.id || '');
     const status = normalizeStatus(item);
@@ -4022,7 +4284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : null;
       if (perPageSelect) {
         const nextValue = Number(perPageSelect.value);
-        historyJobsPerPage = Number.isFinite(nextValue) && nextValue > 0 ? nextValue : 10;
+        historyJobsPerPage = Number.isFinite(nextValue) && nextValue > 0 ? nextValue : 7;
         historyJobsPage = 1;
         loadTechnicianOverview(activeTechnicianProfile || {}, cachedRealtimeRequests || undefined);
         return;

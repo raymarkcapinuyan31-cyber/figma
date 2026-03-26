@@ -185,15 +185,21 @@ html.hfs-sidebar-preexpanded .content{margin-left:220px}
 .overview-details-btn:hover{background:#f5f8ff}
 .overview-status{font-size:11px;font-weight:700;text-transform:capitalize;padding:5px 10px;border-radius:999px;background:#eef3ff;color:#2f5cd7;flex-shrink:0;min-width:88px;text-align:center}
 .overview-status.pending{background:#fff6e6;color:#b26b00}
-.overview-status.confirmed{background:#e9f7ef;color:#1f7a45}
+.overview-status.confirmed,.overview-status.accepted,.overview-status.ongoing,.overview-status.in-progress{background:#e9f7ef;color:#1f7a45}
 .overview-status.completed,.overview-status.finished{background:#ecf2ff;color:#2956c5}
+.overview-status.cancelled,.overview-status.canceled,.overview-status.rejected,.overview-status.declined{background:#ffecee;color:#b4232c}
 .overview-empty{padding:18px 12px;text-align:center;color:#697482;font-size:14px;background:#fbfcff;border:1px dashed #dce3ee;border-radius:10px}
 
 .overview-details-modal{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:90;padding:16px}
 .overview-details-modal[hidden]{display:none}
 .overview-details-card{width:100%;max-width:460px;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,0.18);padding:16px}
-.overview-details-card h2{margin:0 0 10px;font-size:22px;color:#1c2d37}
-.overview-details-body{display:flex;flex-direction:column;gap:6px;max-height:56vh;overflow:auto}
+.overview-details-card h2{margin:0 0 10px;font-size:22px;color:#1c2d37;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.overview-details-status-chip{display:inline-flex;align-items:center;justify-content:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:capitalize;background:#eef3ff;color:#2f5cd7;white-space:nowrap}
+.overview-details-status-chip.pending{background:#fff6e6;color:#b26b00}
+.overview-details-status-chip.confirmed,.overview-details-status-chip.accepted,.overview-details-status-chip.ongoing,.overview-details-status-chip.in-progress{background:#e9f7ef;color:#1f7a45}
+.overview-details-status-chip.completed,.overview-details-status-chip.finished{background:#ecf2ff;color:#2956c5}
+.overview-details-status-chip.cancelled,.overview-details-status-chip.canceled,.overview-details-status-chip.rejected,.overview-details-status-chip.declined{background:#ffecee;color:#b4232c}
+.overview-details-body{display:flex;flex-direction:column;gap:6px;max-height:68vh;overflow:auto}
 .overview-details-body div{font-size:14px;color:#37465a;line-height:1.35}
 .overview-details-body strong{color:#1c2d37}
 .overview-details-address{padding:4px 8px;border:1px solid #e7ebf2;border-radius:8px;background:#f8fbff}
@@ -237,6 +243,16 @@ html.hfs-sidebar-preexpanded .content{margin-left:220px}
 .app-shell.sidebar-collapsed .sidebar{width:0;min-width:0;padding-left:0;padding-right:0;border-right:none}
 .app-shell.sidebar-collapsed .content{padding-left:0;padding-right:0;margin-left:0}
 
+@media(max-width:1024px){
+  .topbar{padding:0 12px}
+  .app-title{font-size:15px}
+  .layout{position:relative}
+  .sidebar{width:min(82vw,280px);min-width:0;position:fixed;left:0;top:76px;height:calc(100vh - 76px);z-index:50;transform:translateX(0);transition:transform .24s ease,box-shadow .2s ease,padding .2s ease,border-color .2s ease}
+  .content{margin-left:0;padding:14px}
+  .app-shell.sidebar-collapsed .sidebar{transform:translateX(-100%);width:min(82vw,280px);padding:22px 14px;border-right:1px solid #e3e8f0}
+  .app-shell:not(.sidebar-collapsed) .sidebar{box-shadow:0 12px 28px rgba(18,40,72,.22)}
+}
+
 @media(max-width:1200px){
   .app-title{font-size:16px}
   .sidebar{width:180px;min-width:180px}
@@ -265,8 +281,18 @@ html.hfs-sidebar-preexpanded .content{margin-left:220px}
   .overview-item-actions{min-width:152px}
 }
 
+@media(max-width:1024px){
+  .layout{position:relative}
+  .sidebar{width:min(82vw,280px);min-width:0;position:fixed;left:0;top:76px;height:calc(100vh - 76px);z-index:50;transform:translateX(0)}
+  .content{margin-left:0;padding:14px}
+  html.hfs-sidebar-preexpanded .content{margin-left:0}
+  .app-shell.sidebar-state-ready:not(.sidebar-collapsed) .sidebar{width:min(82vw,280px);min-width:0}
+}
+
 @media(max-width:720px){
   .content{padding:12px}
+  .sidebar{width:min(88vw,300px)}
+  .app-shell.sidebar-collapsed .sidebar{width:min(88vw,300px)}
   .home-card{border-radius:20px}
   .overview-welcome{padding:2px 0 0}
   .overview-stats{grid-template-columns:1fr}

@@ -4,7 +4,63 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>Admin Dashboard - HomeFixSolution</title>
-	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260323a">
+	<script>
+		(function () {
+			try {
+				var allowed = {
+					overview: true,
+					accounts: true,
+					'create-technician': true,
+					requests: true,
+					'session-logs': true,
+					reports: true,
+					backup: true,
+					'admin-profile': true,
+					'admin-password': true
+				};
+
+				var forceOverview = false;
+				try {
+					forceOverview = sessionStorage.getItem('hfs_admin_force_overview_once') === '1';
+				} catch (_) {
+					forceOverview = false;
+				}
+
+				var section = 'overview';
+				var rawHash = String(window.location && window.location.hash ? window.location.hash : '').trim();
+				if (!forceOverview && rawHash) {
+					var hash = rawHash.charAt(0) === '#' ? rawHash.slice(1) : rawHash;
+					var params = new URLSearchParams(hash);
+					var hashSection = String(params.get('section') || '').trim().toLowerCase();
+					if (allowed[hashSection]) section = hashSection;
+				}
+
+				if (!forceOverview && section === 'overview') {
+					var storedSection = String(localStorage.getItem('hfs_admin_active_section_v1') || '').trim().toLowerCase();
+					if (allowed[storedSection]) section = storedSection;
+				}
+
+				if (section === 'accounts' || section === 'create-technician') {
+					document.documentElement.classList.add('hfs-admin-preopen-accounts');
+				}
+
+				if (section === 'admin-profile' || section === 'admin-password') {
+					document.documentElement.classList.add('hfs-admin-preopen-admin');
+				}
+
+				var style = document.createElement('style');
+				style.id = 'admin-initial-panel-style';
+				style.textContent = '.panel[data-panel]{display:none!important}.panel[data-panel="' + section + '"]{display:block!important}'
+					+ 'html.hfs-admin-preopen-accounts #manageAccountsGroup>.nav-submenu{display:flex!important}'
+					+ 'html.hfs-admin-preopen-accounts #manageAccountsSummary .nav-caret{transform:rotate(180deg)!important}'
+					+ 'html.hfs-admin-preopen-admin #manageAdminGroup>.nav-submenu{display:flex!important}'
+					+ 'html.hfs-admin-preopen-admin #manageAdminSummary .nav-caret{transform:rotate(180deg)!important}';
+				document.head.appendChild(style);
+			} catch (_) {
+			}
+		})();
+	</script>
+	<link rel="stylesheet" href="../../css/admin/dashboard.css?v=20260325j">
 </head>
 <body>
 	<div class="app-shell">
@@ -28,7 +84,7 @@
 			<aside class="sidebar">
 				<div class="sidebar-main">
 					<p class="nav-section-title">Overview</p>
-					<button class="nav-link active" type="button" data-section="overview">Overview</button>
+					<button class="nav-link" type="button" data-section="overview">Overview</button>
 					<p class="nav-section-title">Requests</p>
 					<button class="nav-link" type="button" data-section="requests">Requests</button>
 					<p class="nav-section-title">Accounts</p>
@@ -40,7 +96,7 @@
 							<button class="nav-sub-link" type="button" data-section="create-technician">Add Technician</button>
 						</div>
 					</details>
-					<p class="nav-section-title nav-section-title-spaced">Monitoring</p>
+					<p class="nav-section-title nav-section-title-spaced">System &amp; Monitoring</p>
 					<button class="nav-link" type="button" data-section="backup">Backup Files</button>
 					<button class="nav-link" type="button" data-section="reports">Reports and Concerns</button>
 					<button class="nav-link" type="button" data-section="session-logs">Session Logs</button>
@@ -308,7 +364,7 @@
 						<table class="data-table">
 							<thead>
 								<tr>
-									<th>Time</th>
+									<th>Date &amp; Time</th>
 									<th>Type</th>
 									<th>Request ID</th>
 									<th>Customer</th>
@@ -337,34 +393,51 @@
 					</div>
 
 					<div class="settings-grid">
-						<article class="settings-card">
-							<div class="settings-card-head">
-								<h2>Profile Details</h2>
-							</div>
-							<form id="adminProfileForm" class="settings-form" novalidate>
-								<label class="full">
-									Account Email
-									<input type="email" id="adminSettingsEmail" autocomplete="email" required>
-								</label>
-								<div class="settings-inline-actions full">
-									<button type="button" class="btn-secondary" id="sendAdminVerificationBtn">Send Verification</button>
+						<form id="adminProfileForm" class="admin-profile-form" novalidate>
+							<article class="settings-card admin-profile-tile">
+								<div class="settings-card-head">
+									<h2>Email Details</h2>
 								</div>
-								<p class="settings-note full" id="adminEmailVerificationStatus" role="status" aria-live="polite"></p>
-								<label>
-									First Name
-									<input type="text" id="adminFirstName" minlength="2" maxlength="15" required>
-								</label>
-								<label>
-									Last Name
-									<input type="text" id="adminLastName" minlength="2" maxlength="15" required>
-								</label>
-								<div class="settings-actions">
-									<button type="button" class="btn-secondary" id="editAdminProfileBtn">Edit Profile</button>
-									<button type="submit" class="btn-primary" id="saveAdminProfileBtn">Save Profile</button>
+								<div class="settings-form">
+									<p class="settings-section-label full">Email Settings</p>
+									<label class="full">
+										Account Email
+										<div class="settings-email-input-wrap">
+											<input type="email" id="adminSettingsEmail" autocomplete="email" required>
+										</div>
+									</label>
+									<p class="settings-note settings-email-verified-status full" id="adminEmailVerificationStatus" role="status" aria-live="polite">Verified</p>
+									<div class="settings-inline-actions full">
+										<button type="button" class="btn-secondary" id="editAdminEmailBtn">Edit Email</button>
+										<button type="button" class="btn-secondary" id="sendAdminVerificationBtn">Send Verification</button>
+										<button type="button" class="btn-primary" id="saveAdminEmailBtn">Save Email</button>
+									</div>
 								</div>
-								<p class="form-message" id="adminProfileMessage" role="status" aria-live="polite"></p>
-							</form>
-						</article>
+							</article>
+
+							<article class="settings-card admin-profile-tile">
+								<div class="settings-card-head">
+									<h2>Name Details</h2>
+								</div>
+								<div class="settings-form">
+									<p class="settings-section-label full">Name Settings</p>
+									<label>
+										First Name
+										<input type="text" id="adminFirstName" minlength="2" maxlength="15" required>
+									</label>
+									<label>
+										Last Name
+										<input type="text" id="adminLastName" minlength="2" maxlength="15" required>
+									</label>
+									<div class="settings-actions full">
+										<button type="button" class="btn-secondary" id="editAdminNameBtn">Edit Name</button>
+										<button type="submit" class="btn-primary" id="saveAdminProfileBtn">Save Name</button>
+									</div>
+								</div>
+							</article>
+
+							<p class="form-message admin-profile-form-message" id="adminProfileMessage" role="status" aria-live="polite"></p>
+						</form>
 					</div>
 				</section>
 
@@ -380,11 +453,20 @@
 							<div class="settings-card-head">
 								<h2>Password</h2>
 							</div>
-							<form id="adminPasswordForm" class="settings-form" novalidate>
+							<form id="adminPasswordForm" class="settings-form settings-form-stacked" novalidate>
+								<label>
+									Current Password
+									<div class="password-input-wrap">
+										<input type="password" id="adminCurrentPassword" minlength="8" maxlength="12" autocomplete="current-password" required>
+										<button type="button" class="password-toggle" data-target="#adminCurrentPassword" aria-label="Show password" aria-pressed="false">
+											<img src="../../images/icons/eye-closed.svg" alt="Show password">
+										</button>
+									</div>
+								</label>
 								<label>
 									New Password
 									<div class="password-input-wrap">
-										<input type="password" id="adminNewPassword" minlength="8" maxlength="24" autocomplete="new-password" required>
+										<input type="password" id="adminNewPassword" minlength="8" maxlength="12" autocomplete="new-password" required>
 										<button type="button" class="password-toggle" data-target="#adminNewPassword" aria-label="Show password" aria-pressed="false">
 											<img src="../../images/icons/eye-closed.svg" alt="Show password">
 										</button>
@@ -393,15 +475,24 @@
 								<label>
 									Confirm Password
 									<div class="password-input-wrap">
-										<input type="password" id="adminConfirmPassword" minlength="8" maxlength="24" autocomplete="new-password" required>
+										<input type="password" id="adminConfirmPassword" minlength="8" maxlength="12" autocomplete="new-password" required>
 										<button type="button" class="password-toggle" data-target="#adminConfirmPassword" aria-label="Show password" aria-pressed="false">
 											<img src="../../images/icons/eye-closed.svg" alt="Show password">
 										</button>
 									</div>
 								</label>
-								<p class="settings-note full">Use 8 to 24 characters with uppercase, lowercase, and a number.</p>
+								<div class="settings-password-rules" aria-live="polite">
+									<p class="settings-password-rules-title">Password must include:</p>
+									<ul class="settings-password-rules-list">
+										<li id="adminPasswordRuleLength">8-12 characters</li>
+										<li id="adminPasswordRuleLower">A lowercase letter (a-z)</li>
+										<li id="adminPasswordRuleUpper">An uppercase letter (A-Z)</li>
+										<li id="adminPasswordRuleDigit">A number (0-9)</li>
+										<li id="adminPasswordRuleSpecial">A special character (e.g. !@#$)</li>
+									</ul>
+								</div>
 								<div class="settings-actions">
-									<button type="submit" class="btn-primary" id="saveAdminPasswordBtn">Update Password</button>
+									<button type="submit" class="btn-primary" id="saveAdminPasswordBtn">Change Password</button>
 								</div>
 								<p class="form-message" id="adminPasswordMessage" role="status" aria-live="polite"></p>
 							</form>
@@ -497,9 +588,9 @@
 				<p><strong>Category:</strong> <span id="adminDetailCategory">-</span></p>
 				<p><strong>Schedule:</strong> <span id="adminDetailSchedule">-</span></p>
 				<p><strong>Repair Concern:</strong> <span id="adminDetailConcern">-</span></p>
+				<p><strong>Attachments:</strong> <span id="adminDetailAttachments">-</span></p>
 				<p><strong>Location:</strong> <span id="adminDetailLocation">-</span></p>
 				<p><strong>Additional Details:</strong> <span id="adminDetailNotes">-</span></p>
-				<p><strong>Attachments:</strong> <span id="adminDetailAttachments">-</span></p>
 			</div>
 			<div class="request-detail-actions">
 				<button type="button" class="btn-secondary" id="adminRequestDetailDoneBtn">Close</button>
@@ -516,6 +607,6 @@
 	<script src="../../databasehfs/users/user-profile-database.js?v=20260323g"></script>
 	<script src="../../databasehfs/users/booking-database.js?v=20260312d"></script>
 	<script src="../../databasehfs/users/user-database.js?v=20260323g"></script>
-	<script src="../../Js/admin/dashboard.js?v=20260323g"></script>
+	<script src="../../Js/admin/dashboard.js?v=20260326ah"></script>
 </body>
 </html>

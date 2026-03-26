@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  async function writeUserProfileFastToUsersNode(uid, profilePayload) {
+  async function writeUserProfileFastToCustomersNode(uid, profilePayload) {
     const cleanUid = String(uid || '').trim();
     if (!cleanUid || !profilePayload) return false;
     lastProfileWriteError = null;
@@ -473,12 +473,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         createdAt: serverTs
       });
 
-      // Primary required write: users node in Realtime Database.
-      await db.ref(`users/${cleanUid}`).update(data);
-
-      // Secondary mirror write should not block account creation success.
+      await db.ref(`customers/${cleanUid}`).update(data);
       try {
-        await db.ref(`customers/${cleanUid}`).update(data);
+        await db.ref(`users/${cleanUid}`).remove();
       } catch (_) {
       }
       return true;
@@ -976,6 +973,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       sendOtpBtn.textContent = `RESEND IN ${resendRemaining}s`;
     }, 1000);
+  }
+
+  function getResendCooldownRemainingSeconds() {
+    const cooldownUntil = getResendCooldownUntil();
+    if (!cooldownUntil) return 0;
+    const remainingMs = cooldownUntil - Date.now();
+    if (remainingMs <= 0) return 0;
+    return Math.max(1, Math.ceil(remainingMs / 1000));
   }
 
   function getSendLinkButtonText() {
@@ -1569,8 +1574,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (sendOtpBtn) {
+    const initialCooldownSeconds = getResendCooldownRemainingSeconds();
+    if (initialCooldownSeconds > 0) {
+      startResendCooldown(initialCooldownSeconds);
+    }
+
     sendOtpBtn.addEventListener('click', async () => {
       reg.clearError(fields.otp);
+
+      const remainingCooldownSeconds = getResendCooldownRemainingSeconds();
+      if (remainingCooldownSeconds > 0) {
+        startResendCooldown(remainingCooldownSeconds);
+        setVerificationError(`Please wait ${remainingCooldownSeconds}s before requesting another link.`);
+        return;
+      }
 
       if (!validateEmailOnlyForSendCode()) {
         return;
@@ -1658,10 +1675,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         showNotification('Email verification link has been sent!');
         void checkEmailVerifiedAndAdvance();
       } catch (err) {
+        const rawCode = String((err && err.code) || '').toLowerCase();
+        if (rawCode.includes('too-many-requests')) {
+          startResendCooldown(RESEND_COOLDOWN_SECONDS);
+        }
         const msg = getFriendlyError(err, 'Failed to send verification link.', 'send');
         setVerificationError(msg);
-        sendOtpBtn.disabled = false;
-        sendOtpBtn.textContent = getSendLinkButtonText();
+        if (!rawCode.includes('too-many-requests')) {
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = getSendLinkButtonText();
+        }
       } finally {
         if (!resendCooldownTimer && sendOtpBtn.textContent === 'SENDING...') {
           sendOtpBtn.disabled = false;
@@ -1813,9 +1836,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         saveProfileCache(profileWritePayload, authUser);
 
-        const wroteDirectlyToUsersNode = await writeUserProfileFastToUsersNode(targetUid, profileWritePayload);
-        if (!wroteDirectlyToUsersNode) {
-          const err = lastProfileWriteError || new Error('Unable to save account data to Firebase Realtime Database users node.');
+        const wroteDirectlyToCustomersNode = await writeUserProfileFastToCustomersNode(targetUid, profileWritePayload);
+        if (!wroteDirectlyToCustomersNode) {
+          const err = lastProfileWriteError || new Error('Unable to save account data to Firebase Realtime Database customers node.');
           if (!err.code) err.code = 'permission-denied';
           throw err;
         }

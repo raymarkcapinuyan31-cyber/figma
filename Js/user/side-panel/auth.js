@@ -9,6 +9,7 @@
   let disabledStatePollTimer = null;
   let currentDisabledStateUser = null;
   let disabledResumeChecksBound = false;
+  let stopProfileWatcher = null;
 
   async function writeSessionLog(payload) {
     try {
@@ -53,6 +54,16 @@
     if (!disabledStatePollTimer) return;
     clearInterval(disabledStatePollTimer);
     disabledStatePollTimer = null;
+  }
+
+  function clearProfileWatcher() {
+    if (typeof stopProfileWatcher === 'function') {
+      try {
+        stopProfileWatcher();
+      } catch (_) {
+      }
+    }
+    stopProfileWatcher = null;
   }
 
   async function forceDisabledAccountLogout() {
@@ -228,6 +239,21 @@
       if (Number.isFinite(last) && now - last < 30000) return;
 
       try {
+        let existingRole = '';
+        if (usersDb && typeof usersDb.getUserById === 'function') {
+          try {
+            const existing = await usersDb.getUserById(uid);
+            existingRole = String(existing && existing.role ? existing.role : '').trim().toLowerCase();
+          } catch (_) {
+          }
+        }
+
+        if (existingRole && existingRole !== 'customer') {
+          cache[uid] = now;
+          writeEnsureCache(cache);
+          return;
+        }
+
         if (window.firebase && typeof window.firebase.database === 'function') {
           const db = window.firebase.database();
           const serverTs = window.firebase.database.ServerValue && window.firebase.database.ServerValue.TIMESTAMP
@@ -274,6 +300,7 @@
         currentDisabledStateUser = null;
         clearDisabledStateWatcher();
         clearDisabledStatePolling();
+        clearProfileWatcher();
         scheduleRedirectIfStillSignedOut();
         return;
       }
@@ -303,6 +330,22 @@
       }
 
       ns.setTopbarName(ns.getDisplayName(profile, user));
+
+      clearProfileWatcher();
+      if (typeof usersDb.subscribeUserProfile === 'function') {
+        stopProfileWatcher = usersDb.subscribeUserProfile(user.uid, async (nextProfile) => {
+          if (!nextProfile) return;
+          if (typeof ns.saveProfileCache === 'function') {
+            ns.saveProfileCache(nextProfile, user);
+          }
+          if (nextProfile.isActive === false || await isDisabledIdentity(user)) {
+            await forceDisabledAccountLogout();
+            return;
+          }
+          ns.setTopbarName(ns.getDisplayName(nextProfile, user));
+        }, () => {
+        });
+      }
     });
   };
 

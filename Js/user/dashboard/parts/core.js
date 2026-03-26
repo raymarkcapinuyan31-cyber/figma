@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const REGISTER_WELCOME_FLAG_KEY = 'hfs_show_welcome_on_dashboard';
   const detailsModal = document.getElementById('overviewDetailsModal');
   const detailsBody = document.getElementById('overviewDetailsBody');
+  const detailsTitle = document.getElementById('overviewDetailsTitle');
   const detailsCloseBtn = document.getElementById('overviewDetailsCloseBtn');
   const welcomePopup = document.getElementById('dashboardWelcomePopup');
   const welcomeOkBtn = document.getElementById('dashboardWelcomeOkBtn');
@@ -55,9 +56,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(item && item.status ? item.status : 'pending').toLowerCase();
   }
 
+  function getStatusClassName(statusValue) {
+    return String(statusValue || 'pending')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'pending';
+  }
+
   function isConfirmedBucketStatus(statusValue) {
     const status = String(statusValue || '').toLowerCase();
-    return status === 'confirmed' || status === 'accepted';
+    return status === 'confirmed'
+      || status === 'accepted'
+      || status === 'in-progress'
+      || status === 'ongoing';
   }
 
   function formatRequestCode(item) {
@@ -132,7 +144,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const chosen = chosenCandidates
       .map((value) => String(value || '').trim())
-      .find((value) => value && value.toLowerCase() !== additionalInfo)
+      .find((value) => {
+        if (!value) return false;
+        const normalized = value.toLowerCase();
+        if (normalized === additionalInfo) return false;
+        if (normalized === 'other' || normalized === 'others') return false;
+        return true;
+      })
       || 'Service Request';
 
     const bookingTypeRaw = String((item && (item.bookingType || item.serviceType)) || '').toLowerCase();
@@ -239,7 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await usersDb.updateUserProfile(user.uid, {
           uid: user.uid,
           email: String(user.email || '').trim().toLowerCase(),
-          role: 'customer',
           isVerified: !!user.emailVerified,
           emailVerified: !!user.emailVerified
         });
@@ -281,6 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const html = sorted.map((item, index) => {
       const status = getStatus(item);
+      const statusClass = getStatusClassName(status);
       const label = getDisplayLabel(item);
       const requestId = String((item && (item.id || item.requestId)) || `recent-${index}`).trim();
       recentItemMap.set(requestId, item);
@@ -293,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="overview-item-actions">
             <button type="button" class="overview-details-btn" data-request-id="${escapeHtml(requestId)}">Details</button>
-            <span class="overview-status ${escapeHtml(status)}">${escapeHtml(status)}</span>
+            <span class="overview-status ${escapeHtml(statusClass)}">${escapeHtml(status)}</span>
           </div>
         </div>
       `;
@@ -360,16 +378,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const details = item && item.requestDetails && typeof item.requestDetails === 'object' ? item.requestDetails : {};
     const label = getDisplayLabel(item);
     const status = getStatus(item);
+    const statusClass = getStatusClassName(status);
     const requested = getRequestedDate(item);
     const requestedText = requested
       ? requested.toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'Not recorded';
     const category = String(details.category || item.category || 'N/A').trim() || 'N/A';
     const additionalInfo = String(details.additionalInfo || details.issue || item.issue || item.description || 'N/A').trim() || 'N/A';
+    const rawWhatToInstall = String(
+      details.installationItem
+      || details.itemToInstall
+      || details.selectedOptionValue
+      || details.selectedOptionLabel
+      || item.serviceName
+      || item.deviceType
+      || item.device
+      || label.chosen
+      || ''
+    ).trim();
+    const normalizedCategory = category.toLowerCase();
+    const normalizedWhatToInstall = rawWhatToInstall.toLowerCase();
+    const isOtherCategory = normalizedCategory === 'other' || normalizedCategory === 'others';
+    const isOtherSelection = normalizedWhatToInstall === 'other' || normalizedWhatToInstall === 'others';
+    const whatToInstallCandidate = (isOtherCategory || isOtherSelection) ? additionalInfo : rawWhatToInstall;
+    const whatToInstall = whatToInstallCandidate && whatToInstallCandidate.toLowerCase() !== 'service request'
+      ? whatToInstallCandidate
+      : 'N/A';
     const addressValues = getAddressLines(item);
-    if (additionalInfo && additionalInfo.toLowerCase() !== 'n/a') {
-      addressValues.push(`Request note: ${additionalInfo}`);
-    }
 
     const addressLines = addressValues
       .map((line) => `<div>${escapeHtml(line)}</div>`)
@@ -406,19 +441,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('')
       : '<div class="overview-details-media-empty">No media submitted.</div>';
 
+    if (detailsTitle) {
+      detailsTitle.innerHTML = `
+        <span>Request Details</span>
+        <span class="overview-details-status-chip ${escapeHtml(statusClass)}">${escapeHtml(status)}</span>
+      `;
+    }
+
     detailsBody.innerHTML = `
       <div><strong>Title:</strong> ${escapeHtml(label.title)}</div>
       <div><strong>Request ID:</strong> ${escapeHtml(requestIdValue)}</div>
-      <div><strong>Status:</strong> ${escapeHtml(status)}</div>
       <div><strong>Service mode:</strong> ${escapeHtml(label.serviceMode)}</div>
       <div><strong>Service type:</strong> ${escapeHtml(label.serviceType)}</div>
       <div><strong>Category:</strong> ${escapeHtml(category)}</div>
+      <div><strong>What to install:</strong> ${escapeHtml(whatToInstall)}</div>
+      <div><strong>Description:</strong> ${escapeHtml(additionalInfo)}</div>
       <div><strong>Schedule:</strong> ${escapeHtml(getScheduleText(item))}</div>
       <div><strong>Requested:</strong> ${escapeHtml(requestedText)}</div>
-      <div><strong>Address:</strong></div>
-      <div class="overview-details-address">${addressLines}</div>
       <div><strong>Submitted media:</strong></div>
       <div class="overview-details-media">${mediaHtml}</div>
+      <div><strong>Address:</strong></div>
+      <div class="overview-details-address">${addressLines}</div>
     `;
 
     detailsModal.hidden = false;
@@ -527,6 +570,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function applyOverviewProfile(profile, user) {
+    const email = user && user.email ? user.email : 'No email';
+    const name = ns.getDisplayName(profile, user);
+    const firstName = getFirstName(profile, name, email);
+    const avatarSource = (name || email || 'U').trim();
+
+    setText('overviewWelcomeHeading', `Welcome ${firstName}!`);
+    setText('overviewUserName', name || 'User');
+    setText('overviewUserEmail', email);
+    setText('overviewAvatar', avatarSource.charAt(0).toUpperCase());
+  }
+
   ns.bindSidebarToggle();
   ns.bindUserMenu();
   ns.bindAuthState();
@@ -572,6 +627,15 @@ document.addEventListener('DOMContentLoaded', () => {
       loadOverview(user);
     });
   }
+
+  window.addEventListener('hfs:profile-updated', (event) => {
+    const authUser = usersDb && usersDb.auth ? usersDb.auth.currentUser : null;
+    if (!authUser || !document.querySelector('.dashboard-overview')) return;
+    const detail = event && event.detail ? event.detail : {};
+    const uid = String(detail && detail.uid ? detail.uid : '').trim();
+    if (uid && uid !== String(authUser.uid || '').trim()) return;
+    applyOverviewProfile(detail && detail.profile ? detail.profile : null, authUser);
+  });
 
   window.addEventListener('beforeunload', () => {
     if (typeof unsubscribeOverviewBookings === 'function') {

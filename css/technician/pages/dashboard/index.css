@@ -11,31 +11,44 @@
 .panel#accepted-request #techActiveJobsList::-webkit-scrollbar-track{background:#eef3fa;border-radius:999px}
 .panel#accepted-request #techActiveJobsList::-webkit-scrollbar-thumb{background:#c1d2e7;border-radius:999px;border:2px solid #eef3fa}
 .panel#accepted-request #techActiveJobsList .tech-empty{width:100%}
-.tech-ratings-shell{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.panel#ratings-page{display:flex;flex-direction:column;max-height:calc(100vh - 112px);overflow:hidden;background:radial-gradient(1200px 420px at 50% -240px,#f2f7ff 0%,#ffffff 58%)}
+.panel#ratings-page .panel-title{flex:0 0 auto;margin:2px 0 14px;font-size:44px;line-height:1;letter-spacing:.03em;color:#19395c}
+.tech-ratings-shell{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.panel#ratings-page .tech-ratings-shell{width:100%;flex:1;min-height:0}
 .tech-ratings-summary{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}
-.tech-ratings-summary-card{padding:14px 16px;border:1px solid #d9e4f2;border-radius:12px;background:#f8fbff;display:grid;gap:8px}
-.tech-ratings-summary-card span{font-size:13px;font-weight:700;color:#607288}
-.tech-ratings-summary-card strong{font-size:30px;line-height:1;color:#23405f;font-weight:900}
-.tech-ratings-toolbar{display:flex;justify-content:flex-end}
-.tech-ratings-filter{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#415970}
-.tech-ratings-filter select{min-height:36px;border:1px solid #cfd8eb;border-radius:10px;padding:6px 10px;font-size:13px;font-weight:700;color:#264767;background:#fff}
+.tech-ratings-summary-card{padding:18px 20px;border:1px solid #d5e2f2;border-radius:16px;background:linear-gradient(180deg,#fafdff 0%,#f4f9ff 100%);display:grid;gap:8px;box-shadow:0 8px 22px rgba(18,65,122,0.08);position:relative;overflow:hidden}
+.tech-ratings-summary-card::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:linear-gradient(180deg,#2364b4 0%,#5c95d7 100%)}
+.tech-ratings-summary-card span{font-size:13px;font-weight:800;color:#516c89;text-transform:uppercase;letter-spacing:.03em}
+.tech-ratings-summary-card strong{font-size:40px;line-height:.95;color:#173a63;font-weight:900}
+.tech-ratings-toolbar{display:flex;justify-content:flex-end;align-items:center}
+.tech-ratings-filter{display:inline-flex;align-items:center;gap:10px;font-size:14px;font-weight:800;color:#355476}
+.tech-ratings-filter select{min-height:42px;border:1px solid #c9d8ec;border-radius:14px;padding:8px 14px;font-size:22px;font-weight:800;color:#1f476f;background:#fff;box-shadow:0 6px 14px rgba(19,62,117,0.08)}
+.tech-ratings-filter select:focus{outline:none;border-color:#7fa5d8;box-shadow:0 0 0 3px rgba(64,117,193,0.16),0 8px 18px rgba(19,62,117,0.12)}
 .tech-history-toolbar{max-width:600px;margin:0 auto 14px;display:flex;justify-content:flex-end;align-items:center;padding:0;background:transparent;border:none;box-shadow:none}
 .tech-history-filter{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:800;color:#355476;background:transparent}
 .tech-history-filter select{min-height:38px;min-width:168px;border:1px solid #c6d5e8;border-radius:12px;padding:7px 12px;font-size:13px;font-weight:800;color:#23405f;background:rgba(255,255,255,0.72);box-shadow:none}
 .tech-history-filter select:focus{outline:none;border-color:#7fa5d8;box-shadow:0 0 0 3px rgba(64,117,193,0.12)}
-.tech-ratings-list{display:flex;flex-direction:column;gap:12px}
-.tech-rating-card{background:#fff;border:1px solid #dbe4f1;border-radius:14px;padding:14px 16px;display:grid;gap:10px;box-shadow:0 4px 12px rgba(20,55,103,0.05)}
+.tech-ratings-list{display:flex;flex-direction:column;gap:14px}
+.panel#ratings-page .tech-ratings-list{flex:1;min-height:0;overflow-y:auto;padding:4px 8px 2px 2px}
+.panel#ratings-page .tech-ratings-list::-webkit-scrollbar{width:10px}
+.panel#ratings-page .tech-ratings-list::-webkit-scrollbar-track{background:#eef3fa;border-radius:999px}
+.panel#ratings-page .tech-ratings-list::-webkit-scrollbar-thumb{background:#c1d2e7;border-radius:999px;border:2px solid #eef3fa}
+.tech-rating-card{background:linear-gradient(180deg,#ffffff 0%,#fbfdff 100%);border:1px solid #d4e1f1;border-radius:18px;padding:18px 18px 14px;display:grid;gap:12px;box-shadow:0 10px 28px rgba(15,49,96,0.08);transform:translateY(0);transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease;animation:techRatingCardIn .24s ease both}
+.tech-rating-card:hover{transform:translateY(-2px);border-color:#bed0e7;box-shadow:0 14px 30px rgba(15,49,96,0.13)}
 .tech-rating-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.tech-rating-card-head h3{margin:0;color:#20364f;font-size:18px;line-height:1.2}
-.tech-rating-card-head p{margin:4px 0 0;color:#607288;font-size:13px}
-.tech-rating-pill{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border-radius:999px;background:#fff7de;border:1px solid #f1e4b8;color:#81590b;font-size:13px;font-weight:800;white-space:nowrap}
+.tech-rating-card-head h3{margin:0;color:#1a3a5f;font-size:18px;line-height:1.2}
+.tech-rating-card-head p{margin:6px 0 0;color:#617890;font-size:14px;font-weight:600}
+.tech-rating-pill{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:999px;background:linear-gradient(180deg,#fff9ea 0%,#fff0c6 100%);border:1px solid #edd79a;color:#84590a;font-size:14px;font-weight:900;white-space:nowrap;box-shadow:inset 0 -1px 0 rgba(132,89,10,.08)}
 .tech-rating-stars{display:flex;align-items:center;gap:4px}
-.tech-rating-star{font-size:18px;line-height:1;color:#d7deea}
+.tech-rating-star{font-size:22px;line-height:1;color:#d7deea}
 .tech-rating-star.active{color:#f0b429}
 .tech-rating-card-body{display:grid;gap:6px}
-.tech-rating-card-body p{margin:0;font-size:13px;color:#334b66;line-height:1.45}
+.tech-rating-card-body p{margin:0;font-size:14px;color:#2f4c6b;line-height:1.45}
 .tech-rating-card-actions{display:flex;justify-content:flex-end;padding-top:4px;border-top:1px solid #ebf0f6}
-.tech-ratings-pagination{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.panel#ratings-page .tech-rating-card .tech-view-btn{min-height:38px;padding:0 18px;border-radius:999px;border:1px solid #bfcfe4;background:#fff;color:#224d79;font-size:13px;font-weight:800}
+.panel#ratings-page .tech-rating-card .tech-view-btn:hover{background:#edf5ff;border-color:#a8c2e2}
+.tech-ratings-pagination{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:2px}
+.panel#ratings-page .tech-ratings-pagination{flex:0 0 auto}
 .tech-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px}
 .tech-pagination-summary{font-size:12px;color:#5d7087;font-weight:700}
 .tech-pagination-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
@@ -45,6 +58,14 @@
 .tech-pagination-btn:hover{background:#f2f7ff}
 .tech-pagination-btn:disabled{opacity:.55;cursor:not-allowed;background:#f7f9fc}
 .tech-pagination-page{font-size:12px;color:#415970;font-weight:800}
+.panel#ratings-page .tech-pagination{padding-top:6px}
+.panel#ratings-page .tech-pagination-btn{min-height:42px;border-radius:12px;padding:7px 14px;font-size:13px;font-weight:900;border-color:#c5d4e8;color:#284f77}
+.panel#ratings-page .tech-pagination-page{font-size:14px;color:#2d4e72}
+
+@keyframes techRatingCardIn{
+	from{opacity:0;transform:translateY(8px)}
+	to{opacity:1;transform:translateY(0)}
+}
 .status-badge{font-size:10px;font-weight:700;text-transform:capitalize;padding:3px 9px;border-radius:999px;line-height:1;color:#fff}
 .status-badge.accepted{background:#18d646}
 .status-badge.pending{background:transparent;color:#b18a00;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;font-size:12px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;padding:0 2px;border-radius:0;text-transform:none}
@@ -121,8 +142,9 @@
 .tech-messages-head span{font-size:10px;color:#5f748b}
 .tech-messages-peer-presence{margin:10px 12px 0;padding:8px 11px;border:1px solid #d2e1f2;border-radius:10px;background:linear-gradient(180deg,#f8fbff 0%,#edf5ff 100%);color:#183b61;font-size:12px;font-weight:700;display:block;width:auto;max-width:none}
 .tech-messages-chat-list{padding:10px;display:flex;flex-direction:column;gap:6px;overflow:auto;max-height:340px}
+.tech-messages-inactive{margin:8px 10px 0;padding:14px;border:1px dashed #cfddee;border-radius:10px;background:#f8fbff;color:#5f748b;font-size:13px;line-height:1.45;text-align:center}
 .tech-messages-chat-form{display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:10px;border-top:1px solid #e8edf7}
-.tech-messages-chat-form input{min-height:36px;border:1px solid #d5deec;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f3042;background:#fff}
+.tech-messages-chat-form input{height:40px;min-height:40px;max-height:40px;border:1px solid #d5deec;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f3042;background:#fff;line-height:1.2}
 .tech-messages-chat-form input:focus{outline:none;border-color:#8db0e6;box-shadow:0 0 0 2px rgba(15,73,233,0.08)}
 .tech-messages-chat-form input:disabled{background:#f2f5fb;color:#708299}
 .tech-quick-update-wrap{display:flex;align-items:center;gap:8px;padding:10px 12px 0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:thin}
@@ -230,6 +252,12 @@
 .tech-modal-close:hover{background:#f4f8ff}
 .tech-modal-body{padding:12px 14px;display:grid;gap:8px}
 .tech-modal-body p{margin:0;font-size:13px;color:#334b66;line-height:1.4}
+#techDetailLocation{white-space:pre-line}
+.tech-detail-media{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.tech-detail-media-item{display:flex;align-items:center;justify-content:center;min-height:78px;border:1px solid #d8e3f1;border-radius:10px;background:#f8fbff;color:#264767;text-decoration:none;overflow:hidden;padding:6px}
+.tech-detail-media-item img{width:100%;height:100%;max-height:110px;object-fit:cover;border-radius:8px;display:block}
+.tech-detail-media-video,.tech-detail-media-file{font-size:12px;font-weight:700;line-height:1.3;text-align:center}
+.tech-detail-media-empty{padding:10px;border:1px dashed #d2dfef;border-radius:10px;background:#f8fbff;color:#5f7490;font-size:12px;text-align:center}
 .tech-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #e8edf7}
 .tech-confirm-card{max-width:420px;border-radius:20px;border:1px solid #d8e3f1;box-shadow:0 24px 56px rgba(10,27,55,0.24)}
 .tech-confirm-head{padding:18px 18px 8px;border-bottom:none;align-items:flex-start}
@@ -306,6 +334,20 @@
 @media(max-width:700px){
 	.tech-about-hero,.tech-about-card,.tech-about-note-card{padding:16px}
 	.tech-overview-stats{grid-template-columns:1fr}
+	.panel#ratings-page{max-height:none;overflow:visible}
+	.panel#ratings-page .tech-ratings-list{max-height:360px}
+	.panel#ratings-page .panel-title{font-size:34px}
+	.tech-ratings-filter{font-size:13px}
+	.tech-ratings-filter select{font-size:14px;min-height:40px}
+	.tech-ratings-summary-card strong{font-size:34px}
+	.tech-rating-card-head h3{font-size:17px}
+	.tech-rating-card-head p{font-size:13px}
+	.tech-rating-pill{font-size:13px;min-height:36px}
+	.tech-rating-star{font-size:20px}
+	.tech-rating-card-body p{font-size:13px}
+	.panel#ratings-page .tech-rating-card .tech-view-btn{font-size:12px}
+	.panel#ratings-page .tech-pagination-btn{font-size:12px;min-height:38px}
+	.panel#ratings-page .tech-pagination-page{font-size:13px}
 	.tech-ratings-summary{grid-template-columns:1fr}
 	.tech-ratings-toolbar{justify-content:flex-start}
 	.tech-history-toolbar{justify-content:flex-start}
